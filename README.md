@@ -33,6 +33,33 @@ npm run dev
 
 点击 **开始分析** 可以调用本地 API，运行内置的示例工作流。
 
+也可以点击 **导入评论** 选择 `.json` 或 `.csv` 文件。导入的数据会走同一个 workflow API，并返回原始评论、清洗结果和基础评分统计。
+
+## 评论导入格式
+
+JSON 支持数组，或包含 `reviews` 字段的对象：
+
+```json
+{
+  "reviews": [
+    {
+      "id": "review-001",
+      "rating": 2,
+      "title": "订阅说明不清楚",
+      "body": "价格和取消方式需要更明确。",
+      "appVersion": "2.0.0"
+    }
+  ]
+}
+```
+
+CSV 需要表头，当前支持这些字段：
+
+```csv
+id,rating,title,body,appVersion
+review-001,2,订阅说明不清楚,价格和取消方式需要更明确,2.0.0
+```
+
 ## 运行测试
 
 ```powershell

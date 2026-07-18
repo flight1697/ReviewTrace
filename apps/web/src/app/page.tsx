@@ -1,6 +1,7 @@
 "use client";
 
 import { Activity, Play, Upload } from "lucide-react";
+import type { ChangeEvent } from "react";
 import { useState } from "react";
 
 const stages = [
@@ -57,11 +58,16 @@ type WorkflowRun = {
     storefront: string;
   };
   stages: WorkflowStage[];
+  rawReviews: Review[];
   reviews: Review[];
   cleaningSummary: {
     inputCount: number;
     retainedCount: number;
     duplicateCount: number;
+  };
+  ratingSummary: {
+    averageRating: number;
+    ratingCounts: Record<string, number>;
   };
   findings: Finding[];
   requirements: Requirement[];
@@ -97,7 +103,7 @@ export default function Home() {
   const [status, setStatus] = useState<"idle" | "running" | "failed">("idle");
   const [error, setError] = useState("");
 
-  async function runFixtureWorkflow() {
+  async function requestWorkflow(body: Record<string, string>) {
     setStatus("running");
     setError("");
 
@@ -107,11 +113,7 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          appStoreUrl: appStoreLink,
-          analysisGoal,
-          sourceMode: "fixture",
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
@@ -126,6 +128,42 @@ export default function Home() {
         caughtError instanceof Error
           ? caughtError.message
           : "工作流请求失败",
+      );
+    }
+  }
+
+  async function runFixtureWorkflow() {
+    await requestWorkflow({
+      appStoreUrl: appStoreLink,
+      analysisGoal,
+      sourceMode: "fixture",
+    });
+  }
+
+  async function importReviews(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    const datasetFormat = file.name.toLowerCase().endsWith(".csv")
+      ? "csv"
+      : "json";
+
+    try {
+      await requestWorkflow({
+        appStoreUrl: appStoreLink,
+        analysisGoal,
+        datasetFormat,
+        datasetText: await readFileText(file),
+        sourceMode: "import",
+      });
+    } catch (caughtError) {
+      setStatus("failed");
+      setError(
+        caughtError instanceof Error ? caughtError.message : "读取导入文件失败",
       );
     }
   }
@@ -185,10 +223,16 @@ export default function Home() {
                 <Play size={18} aria-hidden="true" />
                 {status === "running" ? "分析中" : "开始分析"}
               </button>
-              <button className="secondary" type="button">
+              <label className="secondary file-trigger">
                 <Upload size={18} aria-hidden="true" />
                 导入评论
-              </button>
+                <input
+                  aria-label="导入评论文件"
+                  accept=".json,.csv,application/json,text/csv"
+                  onChange={importReviews}
+                  type="file"
+                />
+              </label>
             </div>
           </form>
         </div>
@@ -231,6 +275,10 @@ export default function Home() {
                       {run.cleaningSummary.inputCount}
                     </dd>
                   </div>
+                  <div>
+                    <dt>平均评分</dt>
+                    <dd>{run.ratingSummary.averageRating}</dd>
+                  </div>
                 </dl>
 
                 <div className="artifact-grid">
@@ -238,8 +286,8 @@ export default function Home() {
                     <h3>评论证据</h3>
                     {run.reviews.map((review) => (
                       <p key={review.id}>
-                        <strong>{review.id}</strong>：{review.title}（
-                        {review.rating} 星）
+                        <strong>{review.id}</strong>：<span>{review.title}</span>
+                        （{review.rating} 星）
                       </p>
                     ))}
                   </article>
@@ -300,4 +348,18 @@ export default function Home() {
       </section>
     </main>
   );
+}
+
+function readFileText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.addEventListener("load", () => {
+      resolve(String(reader.result ?? ""));
+    });
+    reader.addEventListener("error", () => {
+      reject(new Error("读取导入文件失败"));
+    });
+    reader.readAsText(file);
+  });
 }
