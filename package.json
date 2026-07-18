@@ -1,0 +1,20 @@
+{
+  "name": "reviewtrace",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Trace App Store reviews into grounded findings, PRDs, and QA test plans.",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "py -m uvicorn reviewtrace_api.main:app --reload --app-dir apps/api/src --port 8000",
+    "dev:web": "npm --workspace apps/web run dev",
+    "test": "npm run test:api && npm --workspace apps/web run test",
+    "test:api": "py -m pytest apps/api/tests",
+    "build": "npm --workspace apps/web run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
