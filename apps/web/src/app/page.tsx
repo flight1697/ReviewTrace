@@ -7,9 +7,11 @@ import { useState } from "react";
 const stages = [
   ["范围", "等待中"],
   ["评论", "等待中"],
+  ["清洗", "等待中"],
   ["证据", "等待中"],
-  ["PRD", "等待中"],
+  ["产品需求文档", "等待中"],
   ["测试", "等待中"],
+  ["校验", "等待中"],
 ] as const;
 
 type WorkflowStage = {
@@ -131,7 +133,7 @@ const apiUrl =
 const stageLabels: Record<string, string> = {
   analysis: "证据",
   cleaning: "清洗",
-  prd: "PRD",
+  prd: "产品需求文档",
   reviews: "评论",
   scope: "范围",
   tests: "测试",
@@ -165,7 +167,7 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        throw new Error("工作流请求失败");
+        throw new Error(await workflowErrorMessage(response));
       }
 
       setRun((await response.json()) as WorkflowRun);
@@ -178,6 +180,14 @@ export default function Home() {
           : "工作流请求失败",
       );
     }
+  }
+
+  async function runLiveWorkflow() {
+    await requestWorkflow({
+      appStoreUrl: appStoreLink,
+      analysisGoal,
+      sourceMode: "live",
+    });
   }
 
   async function runFixtureWorkflow() {
@@ -221,6 +231,8 @@ export default function Home() {
         stageLabels[stage.name] ?? stage.name,
         statusLabels[stage.status] ?? stage.status,
       ])
+    : status === "running"
+      ? stages.map(([name], index) => [name, index === 0 ? "运行中" : "等待中"])
     : stages;
 
   return (
@@ -265,11 +277,19 @@ export default function Home() {
               <button
                 className="primary"
                 disabled={status === "running"}
-                onClick={runFixtureWorkflow}
+                onClick={runLiveWorkflow}
                 type="button"
               >
                 <Play size={18} aria-hidden="true" />
                 {status === "running" ? "分析中" : "开始分析"}
+              </button>
+              <button
+                className="secondary"
+                disabled={status === "running"}
+                onClick={runFixtureWorkflow}
+                type="button"
+              >
+                使用缓存示例
               </button>
               <label className="secondary file-trigger">
                 <Upload size={18} aria-hidden="true" />
@@ -471,6 +491,15 @@ export default function Home() {
       </section>
     </main>
   );
+}
+
+async function workflowErrorMessage(response: Response) {
+  try {
+    const errorBody = (await response.json()) as { detail?: string };
+    return errorBody.detail || "工作流请求失败";
+  } catch {
+    return "工作流请求失败";
+  }
 }
 
 function readFileText(file: File): Promise<string> {

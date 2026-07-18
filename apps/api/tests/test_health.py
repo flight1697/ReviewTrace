@@ -70,6 +70,86 @@ def test_fixture_workflow_returns_traceable_artifacts():
     ]
 
 
+def test_live_app_store_reviews_run_through_same_workflow(monkeypatch):
+    client = TestClient(app)
+
+    def fake_app_store_reviews(app_id: str, storefront: str) -> list[dict[str, object]]:
+        assert app_id == "839285684"
+        assert storefront == "us"
+        return [
+            {
+                "id": "live-001",
+                "rating": 2,
+                "title": "订阅说明不清楚",
+                "body": "购买前没有看懂价格和取消方式。",
+                "appVersion": "8.4.27",
+                "source": "app-store",
+            },
+            {
+                "id": "live-002",
+                "rating": 5,
+                "title": "训练内容不错",
+                "body": "居家训练课程很方便。",
+                "appVersion": "8.4.27",
+                "source": "app-store",
+            },
+        ]
+
+    monkeypatch.setattr(main, "fetch_app_store_reviews", fake_app_store_reviews)
+
+    response = client.post(
+        "/workflow/runs",
+        json={
+            "appStoreUrl": "https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684",
+            "analysisGoal": "关注订阅转化",
+            "sourceMode": "live",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == {
+        "mode": "live",
+        "label": "U.S. App Store 最新评论",
+    }
+    assert body["scope"]["storefront"] == "us"
+    assert [review["id"] for review in body["reviews"]] == ["live-001", "live-002"]
+    assert body["requirements"][0]["sourceReviewIds"] == ["live-001", "live-002"]
+    assert body["testCases"][0]["sourceReviewIds"] == ["live-001", "live-002"]
+
+
+def test_live_app_store_flow_requires_us_app_store_link():
+    client = TestClient(app)
+
+    response = client.post(
+        "/workflow/runs",
+        json={
+            "appStoreUrl": "https://apps.apple.com/cn/app/example/id123456789",
+            "analysisGoal": "关注订阅转化",
+            "sourceMode": "live",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "当前仅支持 U.S. App Store 链接。"
+
+
+def test_workflow_rejects_unknown_source_mode():
+    client = TestClient(app)
+
+    response = client.post(
+        "/workflow/runs",
+        json={
+            "appStoreUrl": "https://apps.apple.com/us/app/example/id123456789",
+            "analysisGoal": "关注订阅转化",
+            "sourceMode": "liv",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "sourceMode 必须是 live、fixture 或 import。"
+
+
 def test_imported_json_reviews_run_through_workflow():
     client = TestClient(app)
 

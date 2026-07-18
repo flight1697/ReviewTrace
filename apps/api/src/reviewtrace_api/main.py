@@ -2,9 +2,13 @@ import csv
 import io
 import json
 import os
+import re
+import urllib.error
+import urllib.request
 from collections import Counter
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -34,7 +38,7 @@ def health_check() -> dict[str, str]:
 class WorkflowRunRequest(BaseModel):
     app_store_url: str = Field(alias="appStoreUrl")
     analysis_goal: str = Field(default="", alias="analysisGoal")
-    source_mode: str = Field(default="fixture", alias="sourceMode")
+    source_mode: str = Field(default="live", alias="sourceMode")
     dataset_format: str | None = Field(default=None, alias="datasetFormat")
     dataset_text: str | None = Field(default=None, alias="datasetText")
 
@@ -44,6 +48,55 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
     if request.source_mode == "import":
         return run_import_workflow(request)
 
+    if request.source_mode == "fixture":
+        return run_fixture_workflow(request)
+
+    if request.source_mode == "live":
+        return run_live_workflow(request)
+
+    raise HTTPException(status_code=400, detail="sourceMode 必须是 live、fixture 或 import。")
+
+
+def run_live_workflow(request: WorkflowRunRequest) -> dict[str, object]:
+    app_id, storefront = parse_us_app_store_url(request.app_store_url)
+    raw_reviews = fetch_app_store_reviews(app_id, storefront)
+    cleaning_result = clean_reviews(raw_reviews)
+    reviews = cleaning_result["reviews"]
+    analysis = analyze_reviews(reviews, request.analysis_goal)
+    findings = enrich_findings_with_evidence(analysis["findings"], reviews)
+    artifacts = generate_product_artifacts(request.analysis_goal, findings, reviews)
+
+    return {
+        "runId": f"live-{app_id}",
+        "source": {
+            "mode": "live",
+            "label": "U.S. App Store 最新评论",
+        },
+        "scope": {
+            "appStoreUrl": request.app_store_url,
+            "analysisGoal": request.analysis_goal,
+            "storefront": storefront,
+        },
+        "stages": completed_stages(),
+        "rawReviews": raw_reviews,
+        "reviews": reviews,
+        "cleaningSummary": cleaning_result["summary"],
+        "ratingSummary": summarize_ratings(reviews),
+        "analysisSummary": analysis["summary"],
+        "findings": artifacts["findings"],
+        "requirements": artifacts["requirements"],
+        "versionPlan": artifacts["versionPlan"],
+        "prd": artifacts["prd"],
+        "testCases": artifacts["testCases"],
+        "dataLimitations": data_limitations(reviews),
+        "traceabilityValidation": artifacts["traceabilityValidation"],
+        "validationMessages": [
+            "已从 Apple RSS 评论源获取最新公开评论；若评论数量较少，请结合导入数据复核。"
+        ],
+    }
+
+
+def run_fixture_workflow(request: WorkflowRunRequest) -> dict[str, object]:
     reviews = load_fixture_reviews()
     review_ids = [str(review["id"]) for review in reviews]
     findings = enrich_findings_with_evidence(
@@ -144,6 +197,90 @@ def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
             "导入数据已完成结构化、清洗和基础统计，后续语义分析会在模型阶段替换当前占位结果。"
         ],
     }
+
+
+def parse_us_app_store_url(app_store_url: str) -> tuple[str, str]:
+    parsed_url = urlparse(app_store_url)
+
+    if parsed_url.scheme not in {"http", "https"} or parsed_url.netloc != "apps.apple.com":
+        raise HTTPException(status_code=400, detail="请输入有效的 App Store 链接。")
+
+    path_parts = [part for part in parsed_url.path.split("/") if part]
+    storefront = path_parts[0].lower() if path_parts else ""
+    if storefront != "us":
+        raise HTTPException(status_code=400, detail="当前仅支持 U.S. App Store 链接。")
+
+    match = re.search(r"id(\d+)", parsed_url.path)
+    if not match:
+        raise HTTPException(status_code=400, detail="App Store 链接缺少应用 ID。")
+
+    return match.group(1), storefront
+
+
+def fetch_app_store_reviews(app_id: str, storefront: str) -> list[dict[str, object]]:
+    url = (
+        f"https://itunes.apple.com/{storefront}/rss/customerreviews/"
+        f"id={app_id}/sortBy=mostRecent/json"
+    )
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "ReviewTrace/0.1"},
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (TimeoutError, urllib.error.URLError, json.JSONDecodeError) as error:
+        raise HTTPException(
+            status_code=502,
+            detail="无法获取 App Store 评论，请稍后重试或使用导入评论。",
+        ) from error
+
+    return parse_app_store_review_feed(payload, app_id, storefront)
+
+
+def parse_app_store_review_feed(
+    payload: dict[str, object],
+    app_id: str,
+    storefront: str,
+) -> list[dict[str, object]]:
+    feed = payload.get("feed", {}) if isinstance(payload, dict) else {}
+    entries = feed.get("entry", []) if isinstance(feed, dict) else []
+    if isinstance(entries, dict):
+        entries = [entries]
+
+    reviews: list[dict[str, object]] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or "im:rating" not in entry:
+            continue
+
+        reviews.append(
+            {
+                "id": feed_label(entry.get("id")) or f"app-store-{len(reviews) + 1:03d}",
+                "rating": parse_rating(feed_label(entry.get("im:rating"))),
+                "title": feed_label(entry.get("title")),
+                "body": feed_label(entry.get("content")),
+                "appVersion": feed_label(entry.get("im:version")),
+                "source": "app-store",
+                "appId": app_id,
+                "storefront": storefront,
+                "author": feed_label(
+                    entry.get("author", {}).get("name")
+                    if isinstance(entry.get("author"), dict)
+                    else None
+                ),
+                "date": feed_label(entry.get("updated")),
+            }
+        )
+
+    return reviews
+
+
+def feed_label(value: object) -> str:
+    if isinstance(value, dict):
+        return str(value.get("label") or "").strip()
+
+    return str(value or "").strip()
 
 
 def analyze_reviews(
@@ -341,7 +478,9 @@ def conflicting_evidence(
 def data_limitations(reviews: list[dict[str, object]]) -> list[str]:
     limitations: list[str] = []
 
-    if len(reviews) < 10:
+    if not reviews:
+        limitations.append("没有获取到可分析评论，请检查链接或改用导入评论。")
+    elif len(reviews) < 10:
         limitations.append("样本量较小，当前结论应视为方向性信号。")
 
     return limitations

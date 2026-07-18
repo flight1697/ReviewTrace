@@ -18,21 +18,22 @@ describe("ReviewTrace 首页", () => {
     expect(screen.getByLabelText("App Store 链接")).toBeInTheDocument();
     expect(screen.getByLabelText("分析目标")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /开始分析/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "使用缓存示例" })).toBeInTheDocument();
     expect(screen.getByText("范围")).toBeInTheDocument();
     expect(screen.getByText("评论")).toBeInTheDocument();
     expect(screen.getByText("证据")).toBeInTheDocument();
-    expect(screen.getByText("PRD")).toBeInTheDocument();
+    expect(screen.getByText("产品需求文档")).toBeInTheDocument();
     expect(screen.getByText("测试")).toBeInTheDocument();
   });
 
-  it("运行示例工作流并展示可追溯结果", async () => {
+  it("运行 App Store 工作流并展示可追溯结果", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          runId: "fixture-run-001",
-          source: { mode: "fixture", label: "缓存示例数据集" },
+          runId: "live-839285684",
+          source: { mode: "live", label: "U.S. App Store 最新评论" },
           scope: {
             appStoreUrl:
               "https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684",
@@ -169,7 +170,7 @@ describe("ReviewTrace 首页", () => {
     fireEvent.click(screen.getByRole("button", { name: /开始分析/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("fixture-run-001")).toBeInTheDocument();
+      expect(screen.getByText("live-839285684")).toBeInTheDocument();
     });
     expect(
       screen.getByText((content) =>
@@ -189,7 +190,10 @@ describe("ReviewTrace 首页", () => {
     ).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "http://localhost:8000/workflow/runs",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({
+        body: expect.stringContaining('"sourceMode":"live"'),
+        method: "POST",
+      }),
     );
   });
 
@@ -370,5 +374,27 @@ describe("ReviewTrace 首页", () => {
         method: "POST",
       }),
     );
+  });
+
+  it("展示后端返回的可恢复错误信息", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: async () => ({
+          detail: "当前仅支持 U.S. App Store 链接。",
+        }),
+      }),
+    );
+
+    render(<Home />);
+
+    fireEvent.click(screen.getByRole("button", { name: /开始分析/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("当前仅支持 U.S. App Store 链接。"),
+      ).toBeInTheDocument();
+    });
   });
 });
