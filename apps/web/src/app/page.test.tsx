@@ -144,6 +144,7 @@ describe("ReviewTrace 首页", () => {
             status: "passed",
             unsupportedFindingIds: [],
             unsupportedRequirementIds: [],
+            unsupportedTestCaseIds: [],
           },
           testCases: [
             {
@@ -303,8 +304,23 @@ describe("ReviewTrace 首页", () => {
             status: "passed",
             unsupportedFindingIds: [],
             unsupportedRequirementIds: [],
+            unsupportedTestCaseIds: [],
           },
-          testCases: [],
+          testCases: [
+            {
+              id: "test-imported-feedback",
+              title: "验证：围绕「导入评论中出现了 1 条可分析反馈」制定可验证改进",
+              requirementId: "requirement-imported-feedback",
+              sourceReviewIds: ["json-001"],
+              steps: [
+                "准备覆盖源评论 json-001 所描述问题的用户情境。",
+                "执行需求对应流程：围绕「导入评论中出现了 1 条可分析反馈」制定可验证改进。",
+                "对照源评论确认该问题被直接回应，而不是只完成通用功能检查。",
+              ],
+              expectedResult:
+                "源评论指出的问题被可验证地解决，且测试结果能追溯到对应需求。",
+            },
+          ],
           validationMessages: [
             "导入数据已完成结构化、清洗和基础统计，后续语义分析会在模型阶段替换当前占位结果。",
           ],
@@ -342,6 +358,10 @@ describe("ReviewTrace 首页", () => {
     expect(screen.getByText("训练计划太突然")).toBeInTheDocument();
     expect(screen.getByText("版本 2：补充验证后的增强项")).toBeInTheDocument();
     expect(screen.getByText(/产品需求文档草案/)).toBeInTheDocument();
+    expect(
+      screen.getByText("准备覆盖源评论 json-001 所描述问题的用户情境。"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/源评论指出的问题被可验证地解决/)).toBeInTheDocument();
     expect(screen.getByText(/追溯校验：通过/)).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "http://localhost:8000/workflow/runs",

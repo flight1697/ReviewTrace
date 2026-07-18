@@ -75,6 +75,8 @@ type TestCase = {
   title: string;
   requirementId: string;
   sourceReviewIds: string[];
+  steps: string[];
+  expectedResult: string;
 };
 
 type WorkflowRun = {
@@ -115,6 +117,8 @@ type WorkflowRun = {
   traceabilityValidation: {
     status: string;
     unsupportedFindingIds: string[];
+    unsupportedRequirementIds: string[];
+    unsupportedTestCaseIds: string[];
   };
   validationMessages: string[];
 };
@@ -412,9 +416,18 @@ export default function Home() {
                   <article className="artifact-item">
                     <h3>QA 覆盖</h3>
                     {run.testCases.map((testCase) => (
-                      <p key={testCase.id}>
-                        {testCase.title} 需求：{testCase.requirementId}
-                      </p>
+                      <div className="finding-detail" key={testCase.id}>
+                        <p>
+                          {testCase.title} 需求：{testCase.requirementId}
+                        </p>
+                        <p>来源评论：{testCase.sourceReviewIds.join(", ")}</p>
+                        <ol>
+                          {testCase.steps.map((step) => (
+                            <li key={step}>{step}</li>
+                          ))}
+                        </ol>
+                        <p>期望结果：{testCase.expectedResult}</p>
+                      </div>
                     ))}
                   </article>
                 </div>

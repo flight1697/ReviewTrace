@@ -93,20 +93,7 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
         "requirements": requirements,
         "versionPlan": artifacts["versionPlan"],
         "prd": artifacts["prd"],
-        "testCases": [
-            {
-                "id": "test-subscription-preview-content",
-                "title": "用户在发起购买前可以看到订阅详情。",
-                "requirementId": str(requirements[0]["id"]),
-                "sourceReviewIds": review_ids,
-                "steps": [
-                    "打开订阅入口。",
-                    "查看购买前预览。",
-                    "确认在购买确认前可以看到包含功能、价格和取消订阅说明。",
-                ],
-                "expectedResult": "购买前预览能在用户确认前清楚解释订阅内容。",
-            }
-        ],
+        "testCases": artifacts["testCases"],
         "dataLimitations": artifacts["dataLimitations"],
         "traceabilityValidation": artifacts["traceabilityValidation"],
         "validationMessages": [
@@ -150,7 +137,7 @@ def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
         "requirements": artifacts["requirements"],
         "versionPlan": artifacts["versionPlan"],
         "prd": artifacts["prd"],
-        "testCases": [],
+        "testCases": artifacts["testCases"],
         "dataLimitations": artifacts["dataLimitations"],
         "traceabilityValidation": artifacts["traceabilityValidation"],
         "validationMessages": [
@@ -366,6 +353,7 @@ def generate_product_artifacts(
     reviews: list[dict[str, object]],
 ) -> dict[str, object]:
     requirements = generate_requirements(findings)
+    test_cases = generate_test_cases(requirements)
     version_plan = generate_version_plan(requirements)
 
     return {
@@ -373,11 +361,13 @@ def generate_product_artifacts(
         "requirements": requirements,
         "versionPlan": version_plan,
         "prd": generate_prd(analysis_goal, requirements, version_plan),
+        "testCases": test_cases,
         "dataLimitations": data_limitations(reviews),
         "traceabilityValidation": validate_traceability(
             findings,
             reviews,
             requirements,
+            test_cases,
         ),
     }
 
@@ -513,10 +503,53 @@ def generate_prd(
     }
 
 
+def generate_test_cases(requirements: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
+        {
+            "id": test_case_id_for_requirement(str(requirement["id"])),
+            "title": f"验证：{trim_sentence(str(requirement['title']))}",
+            "requirementId": str(requirement["id"]),
+            "sourceReviewIds": [
+                str(review_id) for review_id in requirement["sourceReviewIds"]
+            ],
+            "steps": test_case_steps(requirement),
+            "expectedResult": (
+                f"源评论 {', '.join(str(review_id) for review_id in requirement['sourceReviewIds'])} "
+                f"指出的问题被「{trim_sentence(str(requirement['title']))}」直接解决，"
+                "且测试结果能追溯到对应需求。"
+            ),
+        }
+        for requirement in requirements
+        if not bool(requirement.get("assumption"))
+    ]
+
+
+def test_case_steps(requirement: dict[str, object]) -> list[str]:
+    source_review_ids = ", ".join(
+        str(review_id) for review_id in requirement["sourceReviewIds"]
+    )
+    boundaries = "；".join(str(boundary) for boundary in requirement["boundaries"])
+
+    return [
+        f"准备覆盖源评论 {source_review_ids} 所描述问题的用户情境。",
+        f"执行需求对应流程：{trim_sentence(str(requirement['title']))}。",
+        f"核对需求边界：{boundaries}",
+        f"确认源评论 {source_review_ids} 的问题被直接回应，而不是只完成通用功能检查。",
+    ]
+
+
+def test_case_id_for_requirement(requirement_id: str) -> str:
+    if requirement_id.startswith("requirement-"):
+        return f"test-{requirement_id.removeprefix('requirement-')}"
+
+    return f"test-{requirement_id}"
+
+
 def validate_traceability(
     findings: list[dict[str, object]],
     reviews: list[dict[str, object]],
     requirements: list[dict[str, object]] | None = None,
+    test_cases: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     valid_review_ids = {str(review["id"]) for review in reviews}
     review_ids_by_finding_id = {
@@ -538,13 +571,24 @@ def validate_traceability(
         valid_review_ids,
         review_ids_by_finding_id,
     )
+    unsupported_test_case_ids = unsupported_test_cases(
+        test_cases or [],
+        requirements or [],
+        valid_review_ids,
+        set(unsupported_requirement_ids),
+    )
 
     return {
         "status": "passed"
-        if not unsupported_finding_ids and not unsupported_requirement_ids
+        if (
+            not unsupported_finding_ids
+            and not unsupported_requirement_ids
+            and not unsupported_test_case_ids
+        )
         else "failed",
         "unsupportedFindingIds": unsupported_finding_ids,
         "unsupportedRequirementIds": unsupported_requirement_ids,
+        "unsupportedTestCaseIds": unsupported_test_case_ids,
     }
 
 
@@ -579,6 +623,39 @@ def unsupported_requirements(
             unsupported_requirement_ids.append(str(requirement["id"]))
 
     return unsupported_requirement_ids
+
+
+def unsupported_test_cases(
+    test_cases: list[dict[str, object]],
+    requirements: list[dict[str, object]],
+    valid_review_ids: set[str],
+    unsupported_requirement_ids: set[str],
+) -> list[str]:
+    unsupported_test_case_ids: list[str] = []
+    review_ids_by_requirement_id = {
+        str(requirement["id"]): {
+            str(review_id) for review_id in requirement.get("sourceReviewIds", [])
+        }
+        for requirement in requirements
+    }
+
+    for test_case in test_cases:
+        requirement_id = str(test_case.get("requirementId") or "")
+        source_review_ids = {
+            str(review_id) for review_id in test_case.get("sourceReviewIds", [])
+        }
+        supported_review_ids = review_ids_by_requirement_id.get(requirement_id, set())
+
+        if (
+            requirement_id not in review_ids_by_requirement_id
+            or requirement_id in unsupported_requirement_ids
+            or not source_review_ids
+            or not source_review_ids.issubset(valid_review_ids)
+            or not source_review_ids.issubset(supported_review_ids)
+        ):
+            unsupported_test_case_ids.append(str(test_case["id"]))
+
+    return unsupported_test_case_ids
 
 
 def load_fixture_reviews() -> list[dict[str, object]]:

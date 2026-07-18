@@ -63,6 +63,7 @@ def test_fixture_workflow_returns_traceable_artifacts():
         "status": "passed",
         "unsupportedFindingIds": [],
         "unsupportedRequirementIds": [],
+        "unsupportedTestCaseIds": [],
     }
     assert body["validationMessages"] == [
         "所有发现、需求和测试用例都已关联示例评论证据。"
@@ -134,9 +135,15 @@ def test_imported_json_reviews_run_through_workflow():
         "modelDriven": False,
     }
     requirement = body["requirements"][0]
+    test_case = body["testCases"][0]
     assert requirement["findingIds"] == [body["findings"][0]["id"]]
     assert requirement["sourceReviewIds"] == ["json-001", "json-002"]
     assert requirement["assumption"] is False
+    assert test_case["requirementId"] == requirement["id"]
+    assert test_case["sourceReviewIds"] == requirement["sourceReviewIds"]
+    assert "json-001, json-002" in test_case["steps"][0]
+    assert requirement["title"].rstrip("。") in test_case["steps"][1]
+    assert "源评论" in test_case["expectedResult"]
     assert body["versionPlan"]["versions"][0]["name"] == "版本 1：证据支撑的核心改进"
     assert body["prd"]["objective"] == "围绕「关注低评分评论」回应已导入评论中的高证据问题。"
 
@@ -363,4 +370,52 @@ def test_findings_include_conflicts_data_limits_and_traceability_validation():
         "status": "passed",
         "unsupportedFindingIds": [],
         "unsupportedRequirementIds": [],
+        "unsupportedTestCaseIds": [],
     }
+
+
+def test_traceability_validation_flags_unsupported_test_cases(monkeypatch):
+    client = TestClient(app)
+
+    def unsupported_test_case(requirements: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [
+            {
+                "id": "test-unsupported-review-link",
+                "title": "验证：错误来源评论链路",
+                "requirementId": requirements[0]["id"],
+                "sourceReviewIds": ["ghost-review"],
+                "steps": ["错误地引用不存在的源评论。"],
+                "expectedResult": "这个用例应该被追溯校验拦截。",
+            }
+        ]
+
+    monkeypatch.setattr(main, "generate_test_cases", unsupported_test_case)
+
+    response = client.post(
+        "/workflow/runs",
+        json={
+            "appStoreUrl": "https://apps.apple.com/us/app/example/id123456789",
+            "analysisGoal": "关注订阅说明",
+            "sourceMode": "import",
+            "datasetFormat": "json",
+            "datasetText": """
+            {
+              "reviews": [
+                {
+                  "id": "json-001",
+                  "rating": 1,
+                  "title": "订阅说明不清楚",
+                  "body": "价格和取消方式需要更明确。"
+                }
+              ]
+            }
+            """,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["traceabilityValidation"]["status"] == "failed"
+    assert body["traceabilityValidation"]["unsupportedTestCaseIds"] == [
+        "test-unsupported-review-link"
+    ]
