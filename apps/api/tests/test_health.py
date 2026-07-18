@@ -53,11 +53,16 @@ def test_fixture_workflow_returns_traceable_artifacts():
     assert finding["sampleCount"] == len(finding["evidence"])
     assert finding["evidence"][0]["reviewId"] == finding["reviewIds"][0]
     assert requirement["findingIds"] == [finding["id"]]
+    assert requirement["sourceReviewIds"] == finding["reviewIds"]
+    assert requirement["boundaries"]
+    assert body["versionPlan"]["versions"][0]["requirementIds"] == [requirement["id"]]
+    assert body["prd"]["requirements"][0]["id"] == requirement["id"]
     assert test_case["requirementId"] == requirement["id"]
     assert test_case["sourceReviewIds"] == finding["reviewIds"]
     assert body["traceabilityValidation"] == {
         "status": "passed",
         "unsupportedFindingIds": [],
+        "unsupportedRequirementIds": [],
     }
     assert body["validationMessages"] == [
         "所有发现、需求和测试用例都已关联示例评论证据。"
@@ -128,6 +133,12 @@ def test_imported_json_reviews_run_through_workflow():
         "model": "deterministic-import-summary",
         "modelDriven": False,
     }
+    requirement = body["requirements"][0]
+    assert requirement["findingIds"] == [body["findings"][0]["id"]]
+    assert requirement["sourceReviewIds"] == ["json-001", "json-002"]
+    assert requirement["assumption"] is False
+    assert body["versionPlan"]["versions"][0]["name"] == "版本 1：证据支撑的核心改进"
+    assert body["prd"]["objective"] == "围绕「关注低评分评论」回应已导入评论中的高证据问题。"
 
 
 def test_imported_csv_reviews_run_through_workflow():
@@ -351,4 +362,5 @@ def test_findings_include_conflicts_data_limits_and_traceability_validation():
     assert body["traceabilityValidation"] == {
         "status": "passed",
         "unsupportedFindingIds": [],
+        "unsupportedRequirementIds": [],
     }

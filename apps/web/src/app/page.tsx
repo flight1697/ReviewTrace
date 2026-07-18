@@ -44,7 +44,30 @@ type Requirement = {
   id: string;
   title: string;
   priority: string;
+  version: string;
   findingIds: string[];
+  sourceReviewIds: string[];
+  boundaries: string[];
+  assumption: boolean;
+};
+
+type VersionPlan = {
+  versions: {
+    id: string;
+    name: string;
+    goal: string;
+    requirementIds: string[];
+    sourceReviewIds: string[];
+  }[];
+};
+
+type PrdDraft = {
+  title: string;
+  objective: string;
+  versions: VersionPlan["versions"];
+  requirements: Requirement[];
+  successMetrics: string[];
+  assumptions: Requirement[];
 };
 
 type TestCase = {
@@ -85,6 +108,8 @@ type WorkflowRun = {
   };
   findings: Finding[];
   requirements: Requirement[];
+  versionPlan: VersionPlan;
+  prd: PrdDraft;
   testCases: TestCase[];
   dataLimitations: string[];
   traceabilityValidation: {
@@ -357,9 +382,31 @@ export default function Home() {
                   <article className="artifact-item">
                     <h3>需求</h3>
                     {run.requirements.map((requirement) => (
-                      <p key={requirement.id}>
-                        {requirement.priority}: {requirement.title}
-                      </p>
+                      <div className="finding-detail" key={requirement.id}>
+                        <p>
+                          {requirement.priority} / {requirement.version}：
+                          {requirement.title}
+                        </p>
+                        <p>来源评论：{requirement.sourceReviewIds.join(", ")}</p>
+                        <p>边界：{requirement.boundaries.join("；")}</p>
+                      </div>
+                    ))}
+                  </article>
+                  <article className="artifact-item">
+                    <h3>版本计划</h3>
+                    {run.versionPlan.versions.map((version) => (
+                      <div className="finding-detail" key={version.id}>
+                        <p>{version.name}</p>
+                        <p>{version.goal}</p>
+                        <p>需求：{version.requirementIds.join(", ")}</p>
+                      </div>
+                    ))}
+                  </article>
+                  <article className="artifact-item">
+                    <h3>产品需求文档草案</h3>
+                    <p>{run.prd.objective}</p>
+                    {run.prd.successMetrics.map((metric) => (
+                      <p key={metric}>成功指标：{metric}</p>
                     ))}
                   </article>
                   <article className="artifact-item">

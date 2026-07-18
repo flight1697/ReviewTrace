@@ -112,14 +112,38 @@ describe("ReviewTrace 首页", () => {
               title:
                 "购买前展示订阅价值、包含功能、价格和取消路径。",
               priority: "P1",
+              version: "v1",
               findingIds: ["finding-subscription-clarity"],
+              sourceReviewIds: ["fixture-review-001"],
+              boundaries: ["仅覆盖当前评论证据直接支持的问题。"],
               assumption: false,
             },
           ],
+          versionPlan: {
+            versions: [
+              {
+                id: "v1",
+                name: "版本 1：证据支撑的核心改进",
+                goal: "优先交付有明确评论证据和较高样本支撑的问题。",
+                requirementIds: ["requirement-subscription-preview"],
+                sourceReviewIds: ["fixture-review-001"],
+              },
+            ],
+          },
+          prd: {
+            title: "ReviewTrace 产品需求文档草案",
+            objective:
+              "围绕「关注订阅转化相关投诉」回应已导入评论中的高证据问题。",
+            versions: [],
+            requirements: [],
+            successMetrics: ["每条需求都能追溯到至少一条原始评论。"],
+            assumptions: [],
+          },
           dataLimitations: ["样本量较小，当前结论应视为方向性信号。"],
           traceabilityValidation: {
             status: "passed",
             unsupportedFindingIds: [],
+            unsupportedRequirementIds: [],
           },
           testCases: [
             {
@@ -157,6 +181,10 @@ describe("ReviewTrace 首页", () => {
     expect(screen.getByText("冲突证据：")).toBeInTheDocument();
     expect(
       screen.getByText(/购买前已经看到了价格、包含功能和取消方式/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("版本 1：证据支撑的核心改进")).toBeInTheDocument();
+    expect(
+      screen.getByText(/围绕「关注订阅转化相关投诉」/),
     ).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "http://localhost:8000/workflow/runs",
@@ -239,11 +267,42 @@ describe("ReviewTrace 首页", () => {
               conflictingEvidence: [],
             },
           ],
-          requirements: [],
+          requirements: [
+            {
+              id: "requirement-imported-feedback",
+              title: "围绕「导入评论中出现了 1 条可分析反馈」制定可验证改进。",
+              priority: "P2",
+              version: "v2",
+              findingIds: ["finding-imported-feedback"],
+              sourceReviewIds: ["json-001"],
+              boundaries: ["仅覆盖当前评论证据直接支持的问题。"],
+              assumption: false,
+            },
+          ],
+          versionPlan: {
+            versions: [
+              {
+                id: "v2",
+                name: "版本 2：补充验证后的增强项",
+                goal: "处理样本较少或置信度较弱、需要继续观察的问题。",
+                requirementIds: ["requirement-imported-feedback"],
+                sourceReviewIds: ["json-001"],
+              },
+            ],
+          },
+          prd: {
+            title: "ReviewTrace 产品需求文档草案",
+            objective: "围绕「关注低评分评论」回应已导入评论中的高证据问题。",
+            versions: [],
+            requirements: [],
+            successMetrics: ["版本范围只包含当前证据支持的问题。"],
+            assumptions: [],
+          },
           dataLimitations: ["样本量较小，当前结论应视为方向性信号。"],
           traceabilityValidation: {
             status: "passed",
             unsupportedFindingIds: [],
+            unsupportedRequirementIds: [],
           },
           testCases: [],
           validationMessages: [
@@ -281,6 +340,8 @@ describe("ReviewTrace 首页", () => {
     });
     expect(screen.getByText("导入的 JSON 数据集")).toBeInTheDocument();
     expect(screen.getByText("训练计划太突然")).toBeInTheDocument();
+    expect(screen.getByText("版本 2：补充验证后的增强项")).toBeInTheDocument();
+    expect(screen.getByText(/产品需求文档草案/)).toBeInTheDocument();
     expect(screen.getByText(/追溯校验：通过/)).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "http://localhost:8000/workflow/runs",

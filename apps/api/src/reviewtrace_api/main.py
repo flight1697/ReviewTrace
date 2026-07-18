@@ -60,6 +60,8 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
         ],
         reviews,
     )
+    artifacts = generate_product_artifacts(request.analysis_goal, findings, reviews)
+    requirements = artifacts["requirements"]
 
     return {
         "runId": "fixture-run-001",
@@ -87,21 +89,15 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
             "model": "fixture-model-stub",
             "modelDriven": False,
         },
-        "findings": findings,
-        "requirements": [
-            {
-                "id": "requirement-subscription-preview",
-                "title": "购买前展示订阅价值、包含功能、价格和取消路径。",
-                "priority": "P1",
-                "findingIds": ["finding-subscription-clarity"],
-                "assumption": False,
-            }
-        ],
+        "findings": artifacts["findings"],
+        "requirements": requirements,
+        "versionPlan": artifacts["versionPlan"],
+        "prd": artifacts["prd"],
         "testCases": [
             {
                 "id": "test-subscription-preview-content",
                 "title": "用户在发起购买前可以看到订阅详情。",
-                "requirementId": "requirement-subscription-preview",
+                "requirementId": str(requirements[0]["id"]),
                 "sourceReviewIds": review_ids,
                 "steps": [
                     "打开订阅入口。",
@@ -111,8 +107,8 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
                 "expectedResult": "购买前预览能在用户确认前清楚解释订阅内容。",
             }
         ],
-        "dataLimitations": data_limitations(reviews),
-        "traceabilityValidation": validate_findings_traceability(findings, reviews),
+        "dataLimitations": artifacts["dataLimitations"],
+        "traceabilityValidation": artifacts["traceabilityValidation"],
         "validationMessages": [
             "所有发现、需求和测试用例都已关联示例评论证据。"
         ],
@@ -131,6 +127,7 @@ def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
     reviews = cleaning_result["reviews"]
     analysis = analyze_reviews(reviews, request.analysis_goal)
     findings = enrich_findings_with_evidence(analysis["findings"], reviews)
+    artifacts = generate_product_artifacts(request.analysis_goal, findings, reviews)
 
     return {
         "runId": "import-run-001",
@@ -149,11 +146,13 @@ def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
         "cleaningSummary": cleaning_result["summary"],
         "ratingSummary": summarize_ratings(reviews),
         "analysisSummary": analysis["summary"],
-        "findings": findings,
-        "requirements": [],
+        "findings": artifacts["findings"],
+        "requirements": artifacts["requirements"],
+        "versionPlan": artifacts["versionPlan"],
+        "prd": artifacts["prd"],
         "testCases": [],
-        "dataLimitations": data_limitations(reviews),
-        "traceabilityValidation": validate_findings_traceability(findings, reviews),
+        "dataLimitations": artifacts["dataLimitations"],
+        "traceabilityValidation": artifacts["traceabilityValidation"],
         "validationMessages": [
             "导入数据已完成结构化、清洗和基础统计，后续语义分析会在模型阶段替换当前占位结果。"
         ],
@@ -361,11 +360,171 @@ def data_limitations(reviews: list[dict[str, object]]) -> list[str]:
     return limitations
 
 
-def validate_findings_traceability(
+def generate_product_artifacts(
+    analysis_goal: str,
     findings: list[dict[str, object]],
     reviews: list[dict[str, object]],
 ) -> dict[str, object]:
+    requirements = generate_requirements(findings)
+    version_plan = generate_version_plan(requirements)
+
+    return {
+        "findings": findings,
+        "requirements": requirements,
+        "versionPlan": version_plan,
+        "prd": generate_prd(analysis_goal, requirements, version_plan),
+        "dataLimitations": data_limitations(reviews),
+        "traceabilityValidation": validate_traceability(
+            findings,
+            reviews,
+            requirements,
+        ),
+    }
+
+
+def generate_requirements(findings: list[dict[str, object]]) -> list[dict[str, object]]:
+    requirements: list[dict[str, object]] = []
+
+    for finding in findings:
+        review_ids = [str(review_id) for review_id in finding.get("reviewIds", [])]
+        if not review_ids:
+            continue
+
+        finding_id = str(finding["id"])
+        priority = requirement_priority(finding)
+        requirements.append(
+            {
+                "id": requirement_id_for_finding(finding_id),
+                "title": f"围绕「{trim_sentence(str(finding['title']))}」制定可验证改进。",
+                "priority": priority,
+                "version": "v1" if priority == "P1" else "v2",
+                "findingIds": [finding_id],
+                "sourceReviewIds": review_ids,
+                "boundaries": [
+                    "仅覆盖当前评论证据直接支持的问题。",
+                    "不扩展到评论中未出现的全新业务能力。",
+                ],
+                "assumption": False,
+            }
+        )
+
+    return requirements
+
+
+def requirement_priority(finding: dict[str, object]) -> str:
+    sample_count = int(finding.get("sampleCount") or 0)
+    confidence = str(finding.get("confidence") or "")
+
+    if sample_count >= 2 and confidence in {"高", "中", "中等", "待模型分析"}:
+        return "P1"
+
+    return "P2"
+
+
+def requirement_id_for_finding(finding_id: str) -> str:
+    if finding_id.startswith("finding-"):
+        return f"requirement-{finding_id.removeprefix('finding-')}"
+
+    return f"requirement-{finding_id}"
+
+
+def trim_sentence(value: str) -> str:
+    return value.strip().rstrip("。.!！")
+
+
+def generate_version_plan(
+    requirements: list[dict[str, object]],
+) -> dict[str, list[dict[str, object]]]:
+    versions: list[dict[str, object]] = []
+    first_version_requirements = [
+        requirement for requirement in requirements if requirement["version"] == "v1"
+    ]
+    later_version_requirements = [
+        requirement for requirement in requirements if requirement["version"] != "v1"
+    ]
+
+    if first_version_requirements:
+        versions.append(
+            version_plan_item(
+                "v1",
+                "版本 1：证据支撑的核心改进",
+                "优先交付有明确评论证据和较高样本支撑的问题。",
+                first_version_requirements,
+            )
+        )
+
+    if later_version_requirements:
+        versions.append(
+            version_plan_item(
+                "v2",
+                "版本 2：补充验证后的增强项",
+                "处理样本较少或置信度较弱、需要继续观察的问题。",
+                later_version_requirements,
+            )
+        )
+
+    return {"versions": versions}
+
+
+def version_plan_item(
+    version_id: str,
+    name: str,
+    goal: str,
+    requirements: list[dict[str, object]],
+) -> dict[str, object]:
+    source_review_ids = sorted(
+        {
+            str(review_id)
+            for requirement in requirements
+            for review_id in requirement["sourceReviewIds"]
+        }
+    )
+
+    return {
+        "id": version_id,
+        "name": name,
+        "goal": goal,
+        "requirementIds": [str(requirement["id"]) for requirement in requirements],
+        "sourceReviewIds": source_review_ids,
+    }
+
+
+def generate_prd(
+    analysis_goal: str,
+    requirements: list[dict[str, object]],
+    version_plan: dict[str, list[dict[str, object]]],
+) -> dict[str, object]:
+    goal = analysis_goal.strip() or "当前分析目标"
+
+    return {
+        "title": "ReviewTrace 产品需求文档草案",
+        "objective": f"围绕「{goal}」回应已导入评论中的高证据问题。",
+        "versions": version_plan["versions"],
+        "requirements": requirements,
+        "successMetrics": [
+            "每条需求都能追溯到至少一条原始评论。",
+            "版本范围只包含当前证据支持的问题。",
+        ],
+        "assumptions": [
+            requirement
+            for requirement in requirements
+            if bool(requirement.get("assumption"))
+        ],
+    }
+
+
+def validate_traceability(
+    findings: list[dict[str, object]],
+    reviews: list[dict[str, object]],
+    requirements: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
     valid_review_ids = {str(review["id"]) for review in reviews}
+    review_ids_by_finding_id = {
+        str(finding["id"]): {
+            str(review_id) for review_id in finding.get("reviewIds", [])
+        }
+        for finding in findings
+    }
     unsupported_finding_ids = [
         str(finding["id"])
         for finding in findings
@@ -374,11 +533,52 @@ def validate_findings_traceability(
         )
         or not finding.get("reviewIds")
     ]
+    unsupported_requirement_ids = unsupported_requirements(
+        requirements or [],
+        valid_review_ids,
+        review_ids_by_finding_id,
+    )
 
     return {
-        "status": "passed" if not unsupported_finding_ids else "failed",
+        "status": "passed"
+        if not unsupported_finding_ids and not unsupported_requirement_ids
+        else "failed",
         "unsupportedFindingIds": unsupported_finding_ids,
+        "unsupportedRequirementIds": unsupported_requirement_ids,
     }
+
+
+def unsupported_requirements(
+    requirements: list[dict[str, object]],
+    valid_review_ids: set[str],
+    review_ids_by_finding_id: dict[str, set[str]],
+) -> list[str]:
+    unsupported_requirement_ids: list[str] = []
+
+    for requirement in requirements:
+        if bool(requirement.get("assumption")):
+            continue
+
+        finding_ids = [str(finding_id) for finding_id in requirement.get("findingIds", [])]
+        source_review_ids = {
+            str(review_id) for review_id in requirement.get("sourceReviewIds", [])
+        }
+        supported_review_ids = {
+            review_id
+            for finding_id in finding_ids
+            for review_id in review_ids_by_finding_id.get(finding_id, set())
+        }
+
+        if (
+            not finding_ids
+            or not source_review_ids
+            or not set(finding_ids).issubset(review_ids_by_finding_id.keys())
+            or not source_review_ids.issubset(valid_review_ids)
+            or not source_review_ids.issubset(supported_review_ids)
+        ):
+            unsupported_requirement_ids.append(str(requirement["id"]))
+
+    return unsupported_requirement_ids
 
 
 def load_fixture_reviews() -> list[dict[str, object]]:
