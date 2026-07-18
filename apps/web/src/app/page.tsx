@@ -30,6 +30,14 @@ type Finding = {
   reviewIds: string[];
   sampleCount: number;
   confidence: string;
+  evidence: {
+    reviewId: string;
+    excerpt: string;
+  }[];
+  conflictingEvidence: {
+    reviewId: string;
+    excerpt: string;
+  }[];
 };
 
 type Requirement = {
@@ -78,6 +86,11 @@ type WorkflowRun = {
   findings: Finding[];
   requirements: Requirement[];
   testCases: TestCase[];
+  dataLimitations: string[];
+  traceabilityValidation: {
+    status: string;
+    unsupportedFindingIds: string[];
+  };
   validationMessages: string[];
 };
 
@@ -318,9 +331,27 @@ export default function Home() {
                   <article className="artifact-item">
                     <h3>发现</h3>
                     {run.findings.map((finding) => (
-                      <p key={finding.id}>
-                        {finding.title} 证据：{finding.reviewIds.join(", ")}
-                      </p>
+                      <div className="finding-detail" key={finding.id}>
+                        <p>
+                          {finding.title} 证据：{finding.reviewIds.join(", ")}
+                        </p>
+                        {finding.evidence.map((item) => (
+                          <p key={item.reviewId}>
+                            <strong>{item.reviewId}</strong>：{item.excerpt}
+                          </p>
+                        ))}
+                        {finding.conflictingEvidence.length ? (
+                          <div className="conflicting-evidence">
+                            <p>冲突证据：</p>
+                            {finding.conflictingEvidence.map((item) => (
+                              <p key={item.reviewId}>
+                                <strong>{item.reviewId}</strong>：
+                                {item.excerpt}
+                              </p>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                     ))}
                   </article>
                   <article className="artifact-item">
@@ -342,6 +373,14 @@ export default function Home() {
                 </div>
 
                 <div className="validation">
+                  <p>
+                    追溯校验：{run.traceabilityValidation.status === "passed"
+                      ? "通过"
+                      : "未通过"}
+                  </p>
+                  {run.dataLimitations.map((limitation) => (
+                    <p key={limitation}>数据限制：{limitation}</p>
+                  ))}
                   {run.validationMessages.map((message) => (
                     <p key={message}>{message}</p>
                   ))}

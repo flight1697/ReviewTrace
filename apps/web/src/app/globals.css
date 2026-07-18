@@ -219,6 +219,11 @@ textarea {
   line-height: 1.5;
 }
 
+.finding-detail {
+  display: grid;
+  gap: 4px;
+}
+
 .run-output {
   display: grid;
   gap: 18px;

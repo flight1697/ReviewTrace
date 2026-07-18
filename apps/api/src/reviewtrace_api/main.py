@@ -46,6 +46,20 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
 
     reviews = load_fixture_reviews()
     review_ids = [str(review["id"]) for review in reviews]
+    findings = enrich_findings_with_evidence(
+        [
+            {
+                "id": "finding-subscription-clarity",
+                "title": "订阅转化前，订阅价值和取消方式说明不够清楚。",
+                "reviewIds": review_ids,
+                "sampleCount": 2,
+                "confidence": "中等",
+                "method": "示例模型桩",
+                "conflictingEvidence": [],
+            }
+        ],
+        reviews,
+    )
 
     return {
         "runId": "fixture-run-001",
@@ -73,17 +87,7 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
             "model": "fixture-model-stub",
             "modelDriven": False,
         },
-        "findings": [
-            {
-                "id": "finding-subscription-clarity",
-                "title": "订阅转化前，订阅价值和取消方式说明不够清楚。",
-                "reviewIds": review_ids,
-                "sampleCount": 2,
-                "confidence": "中等",
-                "method": "示例模型桩",
-                "conflictingEvidence": [],
-            }
-        ],
+        "findings": findings,
         "requirements": [
             {
                 "id": "requirement-subscription-preview",
@@ -107,6 +111,8 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
                 "expectedResult": "购买前预览能在用户确认前清楚解释订阅内容。",
             }
         ],
+        "dataLimitations": data_limitations(reviews),
+        "traceabilityValidation": validate_findings_traceability(findings, reviews),
         "validationMessages": [
             "所有发现、需求和测试用例都已关联示例评论证据。"
         ],
@@ -123,8 +129,8 @@ def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
     raw_reviews = parse_imported_reviews(dataset_format, dataset_text)
     cleaning_result = clean_reviews(raw_reviews)
     reviews = cleaning_result["reviews"]
-    review_ids = [review["id"] for review in reviews]
     analysis = analyze_reviews(reviews, request.analysis_goal)
+    findings = enrich_findings_with_evidence(analysis["findings"], reviews)
 
     return {
         "runId": "import-run-001",
@@ -143,9 +149,11 @@ def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
         "cleaningSummary": cleaning_result["summary"],
         "ratingSummary": summarize_ratings(reviews),
         "analysisSummary": analysis["summary"],
-        "findings": analysis["findings"],
+        "findings": findings,
         "requirements": [],
         "testCases": [],
+        "dataLimitations": data_limitations(reviews),
+        "traceabilityValidation": validate_findings_traceability(findings, reviews),
         "validationMessages": [
             "导入数据已完成结构化、清洗和基础统计，后续语义分析会在模型阶段替换当前占位结果。"
         ],
@@ -281,6 +289,96 @@ def parse_model_findings(
         )
 
     return validated_findings or build_stub_analysis(reviews)["findings"]
+
+
+def enrich_findings_with_evidence(
+    findings: list[dict[str, object]],
+    reviews: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    reviews_by_id = {str(review["id"]): review for review in reviews}
+    enriched: list[dict[str, object]] = []
+
+    for finding in findings:
+        review_ids = [str(review_id) for review_id in finding.get("reviewIds", [])]
+        evidence = [
+            review_evidence(reviews_by_id[review_id])
+            for review_id in review_ids
+            if review_id in reviews_by_id
+        ]
+        finding_with_evidence = {
+            **finding,
+            "reviewIds": [item["reviewId"] for item in evidence],
+            "sampleCount": len(evidence),
+            "evidence": evidence,
+            "conflictingEvidence": finding.get("conflictingEvidence")
+            or conflicting_evidence(review_ids, reviews_by_id),
+        }
+        enriched.append(finding_with_evidence)
+
+    return enriched
+
+
+def review_evidence(review: dict[str, object]) -> dict[str, str]:
+    return {
+        "reviewId": str(review["id"]),
+        "excerpt": review_excerpt(review),
+    }
+
+
+def review_excerpt(review: dict[str, object]) -> str:
+    title = str(review.get("title") or "").strip()
+    body = str(review.get("body") or "").strip()
+    excerpt = f"{title}：{body}" if title and body else title or body
+    return excerpt[:180]
+
+
+def conflicting_evidence(
+    review_ids: list[str],
+    reviews_by_id: dict[str, dict[str, object]],
+) -> list[dict[str, str]]:
+    selected_reviews = [
+        reviews_by_id[review_id] for review_id in review_ids if review_id in reviews_by_id
+    ]
+    has_low_rating = any(int(review["rating"]) <= 2 for review in selected_reviews)
+    has_high_rating = any(int(review["rating"]) >= 5 for review in selected_reviews)
+
+    if not has_low_rating or not has_high_rating:
+        return []
+
+    return [
+        review_evidence(review)
+        for review in selected_reviews
+        if int(review["rating"]) >= 5
+    ]
+
+
+def data_limitations(reviews: list[dict[str, object]]) -> list[str]:
+    limitations: list[str] = []
+
+    if len(reviews) < 10:
+        limitations.append("样本量较小，当前结论应视为方向性信号。")
+
+    return limitations
+
+
+def validate_findings_traceability(
+    findings: list[dict[str, object]],
+    reviews: list[dict[str, object]],
+) -> dict[str, object]:
+    valid_review_ids = {str(review["id"]) for review in reviews}
+    unsupported_finding_ids = [
+        str(finding["id"])
+        for finding in findings
+        if not set(str(review_id) for review_id in finding.get("reviewIds", [])).issubset(
+            valid_review_ids
+        )
+        or not finding.get("reviewIds")
+    ]
+
+    return {
+        "status": "passed" if not unsupported_finding_ids else "failed",
+        "unsupportedFindingIds": unsupported_finding_ids,
+    }
 
 
 def load_fixture_reviews() -> list[dict[str, object]]:

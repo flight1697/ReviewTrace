@@ -91,8 +91,19 @@ describe("ReviewTrace 首页", () => {
               reviewIds: ["fixture-review-001"],
               sampleCount: 1,
               confidence: "中等",
+              evidence: [
+                {
+                  reviewId: "fixture-review-001",
+                  excerpt: "还没理解套餐内容，试用就结束了：我喜欢这些训练内容，但在我弄清楚包含哪些功能之前，订阅弹窗就出现了。",
+                },
+              ],
               method: "示例模型桩",
-              conflictingEvidence: [],
+              conflictingEvidence: [
+                {
+                  reviewId: "fixture-review-positive",
+                  excerpt: "订阅说明很清楚：购买前已经看到了价格、包含功能和取消方式。",
+                },
+              ],
             },
           ],
           requirements: [
@@ -105,6 +116,11 @@ describe("ReviewTrace 首页", () => {
               assumption: false,
             },
           ],
+          dataLimitations: ["样本量较小，当前结论应视为方向性信号。"],
+          traceabilityValidation: {
+            status: "passed",
+            unsupportedFindingIds: [],
+          },
           testCases: [
             {
               id: "test-subscription-preview-content",
@@ -137,7 +153,11 @@ describe("ReviewTrace 首页", () => {
         ),
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("fixture-review-001")).toBeInTheDocument();
+    expect(screen.getAllByText("fixture-review-001").length).toBeGreaterThan(0);
+    expect(screen.getByText("冲突证据：")).toBeInTheDocument();
+    expect(
+      screen.getByText(/购买前已经看到了价格、包含功能和取消方式/),
+    ).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "http://localhost:8000/workflow/runs",
       expect.objectContaining({ method: "POST" }),
@@ -209,11 +229,22 @@ describe("ReviewTrace 首页", () => {
               reviewIds: ["json-001"],
               sampleCount: 1,
               confidence: "待模型分析",
+              evidence: [
+                {
+                  reviewId: "json-001",
+                  excerpt: "训练计划太突然：低评分用户觉得新手训练没有解释清楚。",
+                },
+              ],
               method: "确定性导入摘要",
               conflictingEvidence: [],
             },
           ],
           requirements: [],
+          dataLimitations: ["样本量较小，当前结论应视为方向性信号。"],
+          traceabilityValidation: {
+            status: "passed",
+            unsupportedFindingIds: [],
+          },
           testCases: [],
           validationMessages: [
             "导入数据已完成结构化、清洗和基础统计，后续语义分析会在模型阶段替换当前占位结果。",
@@ -250,6 +281,7 @@ describe("ReviewTrace 首页", () => {
     });
     expect(screen.getByText("导入的 JSON 数据集")).toBeInTheDocument();
     expect(screen.getByText("训练计划太突然")).toBeInTheDocument();
+    expect(screen.getByText(/追溯校验：通过/)).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "http://localhost:8000/workflow/runs",
       expect.objectContaining({

@@ -50,9 +50,15 @@ def test_fixture_workflow_returns_traceable_artifacts():
 
     assert finding["reviewIds"]
     assert set(finding["reviewIds"]).issubset(source_review_ids)
+    assert finding["sampleCount"] == len(finding["evidence"])
+    assert finding["evidence"][0]["reviewId"] == finding["reviewIds"][0]
     assert requirement["findingIds"] == [finding["id"]]
     assert test_case["requirementId"] == requirement["id"]
     assert test_case["sourceReviewIds"] == finding["reviewIds"]
+    assert body["traceabilityValidation"] == {
+        "status": "passed",
+        "unsupportedFindingIds": [],
+    }
     assert body["validationMessages"] == [
         "所有发现、需求和测试用例都已关联示例评论证据。"
     ]
@@ -110,6 +116,10 @@ def test_imported_json_reviews_run_through_workflow():
     }
     assert [review["id"] for review in body["reviews"]] == ["json-001", "json-002"]
     assert body["findings"][0]["reviewIds"] == ["json-001", "json-002"]
+    assert body["findings"][0]["evidence"][0] == {
+        "reviewId": "json-001",
+        "excerpt": "训练计划太突然：低评分用户觉得新手训练没有解释清楚。",
+    }
     assert body["validationMessages"] == [
         "导入数据已完成结构化、清洗和基础统计，后续语义分析会在模型阶段替换当前占位结果。"
     ]
@@ -275,5 +285,70 @@ def test_openai_provider_can_drive_semantic_findings(monkeypatch):
             "confidence": "高",
             "method": "openai:gpt-5.6-sol",
             "conflictingEvidence": [],
+            "evidence": [
+                {
+                    "reviewId": "json-001",
+                    "excerpt": "训练计划太突然：低评分用户觉得新手训练没有解释清楚。",
+                }
+            ],
         }
     ]
+
+
+def test_findings_include_conflicts_data_limits_and_traceability_validation():
+    client = TestClient(app)
+
+    response = client.post(
+        "/workflow/runs",
+        json={
+            "appStoreUrl": "https://apps.apple.com/us/app/example/id123456789",
+            "analysisGoal": "关注订阅说明",
+            "sourceMode": "import",
+            "datasetFormat": "json",
+            "datasetText": """
+            {
+              "reviews": [
+                {
+                  "id": "low-001",
+                  "rating": 1,
+                  "title": "订阅说明不清楚",
+                  "body": "低评分用户认为价格和取消方式需要更明确。"
+                },
+                {
+                  "id": "high-001",
+                  "rating": 5,
+                  "title": "订阅说明很清楚",
+                  "body": "高评分用户认为订阅说明足够透明。"
+                }
+              ]
+            }
+            """,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+
+    finding = body["findings"][0]
+    assert finding["sampleCount"] == 2
+    assert finding["evidence"] == [
+        {
+            "reviewId": "low-001",
+            "excerpt": "订阅说明不清楚：低评分用户认为价格和取消方式需要更明确。",
+        },
+        {
+            "reviewId": "high-001",
+            "excerpt": "订阅说明很清楚：高评分用户认为订阅说明足够透明。",
+        },
+    ]
+    assert finding["conflictingEvidence"] == [
+        {
+            "reviewId": "high-001",
+            "excerpt": "订阅说明很清楚：高评分用户认为订阅说明足够透明。",
+        }
+    ]
+    assert body["dataLimitations"] == ["样本量较小，当前结论应视为方向性信号。"]
+    assert body["traceabilityValidation"] == {
+        "status": "passed",
+        "unsupportedFindingIds": [],
+    }
