@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -67,6 +68,11 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
             "discardedEmptyCount": 0,
         },
         "ratingSummary": summarize_ratings(reviews),
+        "analysisSummary": {
+            "provider": "stub",
+            "model": "fixture-model-stub",
+            "modelDriven": False,
+        },
         "findings": [
             {
                 "id": "finding-subscription-clarity",
@@ -118,6 +124,7 @@ def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
     cleaning_result = clean_reviews(raw_reviews)
     reviews = cleaning_result["reviews"]
     review_ids = [review["id"] for review in reviews]
+    analysis = analyze_reviews(reviews, request.analysis_goal)
 
     return {
         "runId": "import-run-001",
@@ -135,6 +142,49 @@ def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
         "reviews": reviews,
         "cleaningSummary": cleaning_result["summary"],
         "ratingSummary": summarize_ratings(reviews),
+        "analysisSummary": analysis["summary"],
+        "findings": analysis["findings"],
+        "requirements": [],
+        "testCases": [],
+        "validationMessages": [
+            "导入数据已完成结构化、清洗和基础统计，后续语义分析会在模型阶段替换当前占位结果。"
+        ],
+    }
+
+
+def analyze_reviews(
+    reviews: list[dict[str, object]],
+    analysis_goal: str,
+) -> dict[str, object]:
+    provider = os.getenv("MODEL_PROVIDER", "stub").lower()
+    model = os.getenv("MODEL_NAME", "gpt-5.6-sol")
+
+    if provider == "openai" and os.getenv("OPENAI_API_KEY"):
+        prompt = build_review_analysis_prompt(reviews, analysis_goal)
+        model_output = call_openai_responses_api(prompt, model)
+        findings = parse_model_findings(model_output, reviews, f"openai:{model}")
+
+        return {
+            "summary": {
+                "provider": "openai",
+                "model": model,
+                "modelDriven": True,
+            },
+            "findings": findings,
+        }
+
+    return build_stub_analysis(reviews)
+
+
+def build_stub_analysis(reviews: list[dict[str, object]]) -> dict[str, object]:
+    review_ids = [str(review["id"]) for review in reviews]
+
+    return {
+        "summary": {
+            "provider": "stub",
+            "model": "deterministic-import-summary",
+            "modelDriven": False,
+        },
         "findings": [
             {
                 "id": "finding-imported-feedback",
@@ -146,12 +196,91 @@ def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
                 "conflictingEvidence": [],
             }
         ],
-        "requirements": [],
-        "testCases": [],
-        "validationMessages": [
-            "导入数据已完成结构化、清洗和基础统计，后续语义分析会在模型阶段替换当前占位结果。"
-        ],
     }
+
+
+def build_review_analysis_prompt(
+    reviews: list[dict[str, object]],
+    analysis_goal: str,
+) -> str:
+    review_payload = [
+        {
+            "id": review["id"],
+            "rating": review["rating"],
+            "title": review["title"],
+            "body": review["body"],
+            "appVersion": review["appVersion"],
+        }
+        for review in reviews
+    ]
+
+    return "\n".join(
+        [
+            "你是严谨的 App Store 评论分析助手。",
+            "请根据分析目标，从评论中归纳主要用户问题。",
+            "只能使用输入评论中存在的证据，不要编造 reviewId、样本数或结论。",
+            "请只返回 JSON，不要返回 Markdown。",
+            "JSON 结构：{\"findings\":[{\"id\":\"...\",\"title\":\"...\",\"reviewIds\":[\"...\"],\"sampleCount\":1,\"confidence\":\"高/中/低\",\"conflictingEvidence\":[]}]}",
+            f"分析目标：{analysis_goal or '无特定目标'}",
+            "评论数据：",
+            json.dumps(review_payload, ensure_ascii=False),
+        ]
+    )
+
+
+def call_openai_responses_api(prompt: str, model: str) -> str:
+    from openai import OpenAI
+
+    client = OpenAI()
+    response = client.responses.create(
+        model=model,
+        input=prompt,
+    )
+    return response.output_text
+
+
+def parse_model_findings(
+    model_output: str,
+    reviews: list[dict[str, object]],
+    method: str,
+) -> list[dict[str, object]]:
+    try:
+        parsed = json.loads(model_output)
+    except json.JSONDecodeError as error:
+        raise HTTPException(status_code=502, detail="模型返回的 JSON 无法解析。") from error
+
+    findings = parsed.get("findings", []) if isinstance(parsed, dict) else []
+    if not isinstance(findings, list):
+        raise HTTPException(status_code=502, detail="模型返回的 findings 必须是数组。")
+
+    valid_review_ids = {str(review["id"]) for review in reviews}
+    validated_findings: list[dict[str, object]] = []
+
+    for index, finding in enumerate(findings, start=1):
+        if not isinstance(finding, dict):
+            continue
+
+        review_ids = [
+            str(review_id)
+            for review_id in finding.get("reviewIds", [])
+            if str(review_id) in valid_review_ids
+        ]
+        if not review_ids:
+            continue
+
+        validated_findings.append(
+            {
+                "id": str(finding.get("id") or f"finding-model-{index:03d}"),
+                "title": str(finding.get("title") or "模型发现未命名问题。"),
+                "reviewIds": review_ids,
+                "sampleCount": int(finding.get("sampleCount") or len(review_ids)),
+                "confidence": str(finding.get("confidence") or "中"),
+                "method": method,
+                "conflictingEvidence": finding.get("conflictingEvidence", []),
+            }
+        )
+
+    return validated_findings or build_stub_analysis(reviews)["findings"]
 
 
 def load_fixture_reviews() -> list[dict[str, object]]:

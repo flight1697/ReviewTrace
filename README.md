@@ -71,3 +71,13 @@ npm run test
 ## 环境变量
 
 将 `.env.example` 复制为 `.env.local` 后可配置本地前端。不要将 API key 或其他密钥提交到 Git。
+
+后端模型分析通过环境变量配置：
+
+```powershell
+$env:MODEL_PROVIDER="openai"
+$env:MODEL_NAME="gpt-5.6-sol"
+$env:OPENAI_API_KEY="你的 API key"
+```
+
+不配置 `OPENAI_API_KEY` 时，系统会使用明确标注的确定性兜底分析。配置 OpenAI 后，语义 finding 会通过 Responses API 生成，并在结果中标记 `modelDriven: true`。

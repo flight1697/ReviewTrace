@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from reviewtrace_api import main
 from reviewtrace_api.main import app
 
 
@@ -112,6 +113,11 @@ def test_imported_json_reviews_run_through_workflow():
     assert body["validationMessages"] == [
         "导入数据已完成结构化、清洗和基础统计，后续语义分析会在模型阶段替换当前占位结果。"
     ]
+    assert body["analysisSummary"] == {
+        "provider": "stub",
+        "model": "deterministic-import-summary",
+        "modelDriven": False,
+    }
 
 
 def test_imported_csv_reviews_run_through_workflow():
@@ -201,3 +207,73 @@ def test_imported_reviews_are_cleaned_and_deduplicated():
         "averageRating": 3.0,
         "ratingCounts": {"2": 1, "4": 1},
     }
+
+
+def test_openai_provider_can_drive_semantic_findings(monkeypatch):
+    client = TestClient(app)
+
+    monkeypatch.setenv("MODEL_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("MODEL_NAME", "gpt-5.6-sol")
+
+    def fake_openai_response(prompt: str, model: str) -> str:
+        assert "json-001" in prompt
+        assert model == "gpt-5.6-sol"
+        return """
+        {
+          "findings": [
+            {
+              "id": "finding-onboarding-clarity",
+              "title": "新手训练开始前缺少足够解释。",
+              "reviewIds": ["json-001"],
+              "sampleCount": 1,
+              "confidence": "高",
+              "conflictingEvidence": []
+            }
+          ]
+        }
+        """
+
+    monkeypatch.setattr(main, "call_openai_responses_api", fake_openai_response)
+
+    response = client.post(
+        "/workflow/runs",
+        json={
+            "appStoreUrl": "https://apps.apple.com/us/app/example/id123456789",
+            "analysisGoal": "关注新手训练可用性",
+            "sourceMode": "import",
+            "datasetFormat": "json",
+            "datasetText": """
+            {
+              "reviews": [
+                {
+                  "id": "json-001",
+                  "rating": 1,
+                  "title": "训练计划太突然",
+                  "body": "低评分用户觉得新手训练没有解释清楚。"
+                }
+              ]
+            }
+            """,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["analysisSummary"] == {
+        "provider": "openai",
+        "model": "gpt-5.6-sol",
+        "modelDriven": True,
+    }
+    assert body["findings"] == [
+        {
+            "id": "finding-onboarding-clarity",
+            "title": "新手训练开始前缺少足够解释。",
+            "reviewIds": ["json-001"],
+            "sampleCount": 1,
+            "confidence": "高",
+            "method": "openai:gpt-5.6-sol",
+            "conflictingEvidence": [],
+        }
+    ]

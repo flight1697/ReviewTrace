@@ -78,6 +78,11 @@ describe("ReviewTrace 首页", () => {
             averageRating: 2,
             ratingCounts: { "2": 1 },
           },
+          analysisSummary: {
+            provider: "stub",
+            model: "fixture-model-stub",
+            modelDriven: false,
+          },
           findings: [
             {
               id: "finding-subscription-clarity",
@@ -191,6 +196,11 @@ describe("ReviewTrace 首页", () => {
           ratingSummary: {
             averageRating: 1,
             ratingCounts: { "1": 1 },
+          },
+          analysisSummary: {
+            provider: "stub",
+            model: "deterministic-import-summary",
+            modelDriven: false,
           },
           findings: [
             {

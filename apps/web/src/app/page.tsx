@@ -70,6 +70,11 @@ type WorkflowRun = {
     averageRating: number;
     ratingCounts: Record<string, number>;
   };
+  analysisSummary: {
+    provider: string;
+    model: string;
+    modelDriven: boolean;
+  };
   findings: Finding[];
   requirements: Requirement[];
   testCases: TestCase[];
@@ -287,6 +292,16 @@ export default function Home() {
                   <div>
                     <dt>空评论</dt>
                     <dd>{run.cleaningSummary.discardedEmptyCount}</dd>
+                  </div>
+                  <div>
+                    <dt>分析方式</dt>
+                    <dd>
+                      {run.analysisSummary.modelDriven ? "模型驱动" : "确定性兜底"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>模型</dt>
+                    <dd>{run.analysisSummary.model}</dd>
                   </div>
                 </dl>
 
