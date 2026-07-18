@@ -81,17 +81,20 @@ JSON 支持数组，或包含 `reviews` 字段的对象：
       "rating": 2,
       "title": "订阅说明不清楚",
       "body": "价格和取消方式需要更明确。",
-      "appVersion": "2.0.0"
+      "appVersion": "2.0.0",
+      "date": "2026-07-01T00:00:00Z",
+      "locale": "zh-CN",
+      "appId": "123456789"
     }
   ]
 }
 ```
 
-CSV 需要表头，当前支持这些字段：
+CSV 需要表头，常用字段如下；`date`、`locale`、`source`、`appId`、`author` 可选：
 
 ```csv
-id,rating,title,body,appVersion
-review-001,2,订阅说明不清楚,价格和取消方式需要更明确,2.0.0
+id,rating,title,body,appVersion,date,locale,source,appId,author
+review-001,2,订阅说明不清楚,价格和取消方式需要更明确,2.0.0,2026-07-01T00:00:00Z,zh-CN,import,123456789,用户A
 ```
 
 ## 运行测试

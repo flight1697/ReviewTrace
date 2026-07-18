@@ -270,6 +270,8 @@ def parse_app_store_review_feed(
                     else None
                 ),
                 "date": feed_label(entry.get("updated")),
+                "locale": storefront,
+                "rawMetadata": entry,
             }
         )
 
@@ -292,7 +294,13 @@ def analyze_reviews(
 
     if provider == "openai" and os.getenv("OPENAI_API_KEY"):
         prompt = build_review_analysis_prompt(reviews, analysis_goal)
-        model_output = call_openai_responses_api(prompt, model)
+        try:
+            model_output = call_openai_responses_api(prompt, model)
+        except Exception as error:
+            raise HTTPException(
+                status_code=502,
+                detail="模型服务不可用，请检查 API key、网络或改用确定性兜底。",
+            ) from error
         findings = parse_model_findings(model_output, reviews, f"openai:{model}")
 
         return {
@@ -861,6 +869,12 @@ def normalize_review_rows(rows: list[Any]) -> list[dict[str, object]]:
                 "body": str(row.get("body") or row.get("content") or "").strip(),
                 "appVersion": str(row.get("appVersion") or row.get("version") or "").strip(),
                 "source": str(row.get("source") or "import").strip(),
+                "appId": str(row.get("appId") or row.get("appID") or "").strip(),
+                "storefront": str(row.get("storefront") or "").strip(),
+                "author": str(row.get("author") or "").strip(),
+                "date": str(row.get("date") or row.get("updated") or "").strip(),
+                "locale": str(row.get("locale") or "").strip(),
+                "rawMetadata": row,
             }
         )
 

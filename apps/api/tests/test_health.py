@@ -168,7 +168,10 @@ def test_imported_json_reviews_run_through_workflow():
                   "rating": 1,
                   "title": "训练计划太突然",
                   "body": "低评分用户觉得新手训练没有解释清楚。",
-                  "appVersion": "1.2.0"
+                  "appVersion": "1.2.0",
+                  "date": "2026-07-01T00:00:00Z",
+                  "locale": "zh-CN",
+                  "appId": "123456789"
                 },
                 {
                   "id": "json-002",
@@ -201,6 +204,10 @@ def test_imported_json_reviews_run_through_workflow():
         "ratingCounts": {"1": 1, "5": 1},
     }
     assert [review["id"] for review in body["reviews"]] == ["json-001", "json-002"]
+    assert body["reviews"][0]["date"] == "2026-07-01T00:00:00Z"
+    assert body["reviews"][0]["locale"] == "zh-CN"
+    assert body["reviews"][0]["appId"] == "123456789"
+    assert body["reviews"][0]["rawMetadata"]["id"] == "json-001"
     assert body["findings"][0]["reviewIds"] == ["json-001", "json-002"]
     assert body["findings"][0]["evidence"][0] == {
         "reviewId": "json-001",
@@ -391,6 +398,43 @@ def test_openai_provider_can_drive_semantic_findings(monkeypatch):
             ],
         }
     ]
+
+
+def test_openai_provider_failure_returns_recoverable_error(monkeypatch):
+    client = TestClient(app)
+
+    monkeypatch.setenv("MODEL_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    def unavailable_model(prompt: str, model: str) -> str:
+        raise RuntimeError("network unavailable")
+
+    monkeypatch.setattr(main, "call_openai_responses_api", unavailable_model)
+
+    response = client.post(
+        "/workflow/runs",
+        json={
+            "appStoreUrl": "https://apps.apple.com/us/app/example/id123456789",
+            "analysisGoal": "关注新手训练可用性",
+            "sourceMode": "import",
+            "datasetFormat": "json",
+            "datasetText": """
+            {
+              "reviews": [
+                {
+                  "id": "json-001",
+                  "rating": 1,
+                  "title": "训练计划太突然",
+                  "body": "低评分用户觉得新手训练没有解释清楚。"
+                }
+              ]
+            }
+            """,
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "模型服务不可用，请检查 API key、网络或改用确定性兜底。"
 
 
 def test_findings_include_conflicts_data_limits_and_traceability_validation():
