@@ -3,40 +3,40 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import Home from "./page";
 
-describe("ReviewTrace home", () => {
+describe("ReviewTrace 首页", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
-  it("renders the runnable analysis workspace", () => {
+  it("渲染可运行的分析工作台", () => {
     render(<Home />);
 
     expect(
       screen.getByRole("heading", { name: "ReviewTrace" }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("App Store link")).toBeInTheDocument();
-    expect(screen.getByLabelText("Analysis goal")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Start analysis/i })).toBeInTheDocument();
-    expect(screen.getByText("Scope")).toBeInTheDocument();
-    expect(screen.getByText("Reviews")).toBeInTheDocument();
-    expect(screen.getByText("Evidence")).toBeInTheDocument();
+    expect(screen.getByLabelText("App Store 链接")).toBeInTheDocument();
+    expect(screen.getByLabelText("分析目标")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /开始分析/i })).toBeInTheDocument();
+    expect(screen.getByText("范围")).toBeInTheDocument();
+    expect(screen.getByText("评论")).toBeInTheDocument();
+    expect(screen.getByText("证据")).toBeInTheDocument();
     expect(screen.getByText("PRD")).toBeInTheDocument();
-    expect(screen.getByText("Tests")).toBeInTheDocument();
+    expect(screen.getByText("测试")).toBeInTheDocument();
   });
 
-  it("runs the fixture workflow and displays traceable output", async () => {
+  it("运行示例工作流并展示可追溯结果", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
           runId: "fixture-run-001",
-          source: { mode: "fixture", label: "Cached fixture dataset" },
+          source: { mode: "fixture", label: "缓存示例数据集" },
           scope: {
             appStoreUrl:
               "https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684",
-            analysisGoal: "Focus on subscription conversion complaints",
+            analysisGoal: "关注订阅转化相关投诉",
             storefront: "us",
           },
           stages: [
@@ -52,8 +52,8 @@ describe("ReviewTrace home", () => {
             {
               id: "fixture-review-001",
               rating: 2,
-              title: "Trial ended before I understood the plan",
-              body: "I liked the workouts, but the subscription prompt appeared before I knew what was included.",
+              title: "还没理解套餐内容，试用就结束了",
+              body: "我喜欢这些训练内容，但在我弄清楚包含哪些功能之前，订阅弹窗就出现了。",
               appVersion: "24.8",
               source: "fixture",
             },
@@ -67,11 +67,11 @@ describe("ReviewTrace home", () => {
             {
               id: "finding-subscription-clarity",
               title:
-                "Subscription value and cancellation details are not clear enough before conversion.",
+                "订阅转化前，订阅价值和取消方式说明不够清楚。",
               reviewIds: ["fixture-review-001"],
               sampleCount: 1,
-              confidence: "medium",
-              method: "fixture model stub",
+              confidence: "中等",
+              method: "示例模型桩",
               conflictingEvidence: [],
             },
           ],
@@ -79,7 +79,7 @@ describe("ReviewTrace home", () => {
             {
               id: "requirement-subscription-preview",
               title:
-                "Show subscription value, included features, price, and cancellation path before purchase.",
+                "购买前展示订阅价值、包含功能、价格和取消路径。",
               priority: "P1",
               findingIds: ["finding-subscription-clarity"],
               assumption: false,
@@ -88,16 +88,16 @@ describe("ReviewTrace home", () => {
           testCases: [
             {
               id: "test-subscription-preview-content",
-              title: "User sees subscription details before starting purchase.",
+              title: "用户在发起购买前可以看到订阅详情。",
               requirementId: "requirement-subscription-preview",
               sourceReviewIds: ["fixture-review-001"],
-              steps: ["Open the subscription entry point."],
+              steps: ["打开订阅入口。"],
               expectedResult:
-                "The preview explains the subscription clearly before the user commits.",
+                "购买前预览能在用户确认前清楚解释订阅内容。",
             },
           ],
           validationMessages: [
-            "All findings, requirements, and test cases reference fixture evidence.",
+            "所有发现、需求和测试用例都已关联示例评论证据。",
           ],
         }),
       }),
@@ -105,7 +105,7 @@ describe("ReviewTrace home", () => {
 
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Start analysis/i }));
+    fireEvent.click(screen.getByRole("button", { name: /开始分析/i }));
 
     await waitFor(() => {
       expect(screen.getByText("fixture-run-001")).toBeInTheDocument();
@@ -113,7 +113,7 @@ describe("ReviewTrace home", () => {
     expect(
       screen.getByText((content) =>
         content.includes(
-          "Subscription value and cancellation details are not clear enough before conversion.",
+          "订阅转化前，订阅价值和取消方式说明不够清楚。",
         ),
       ),
     ).toBeInTheDocument();

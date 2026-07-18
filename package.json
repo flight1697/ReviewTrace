@@ -2,7 +2,7 @@
   "name": "reviewtrace",
   "private": true,
   "version": "0.1.0",
-  "description": "Trace App Store reviews into grounded findings, PRDs, and QA test plans.",
+  "description": "将 App Store 评论转化为有证据链支撑的产品洞察、PRD 和 QA 测试计划。",
   "workspaces": [
     "apps/web"
   ],

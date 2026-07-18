@@ -1,44 +1,44 @@
 # ReviewTrace
 
-ReviewTrace turns App Store reviews into evidence-linked product findings, PRD requirements, version plans, and QA test cases.
+ReviewTrace 将 App Store 用户评论转化为有证据链支撑的产品洞察、PRD 需求、版本规划和 QA 测试用例。
 
-This first slice scaffolds the runnable web application:
+当前版本已经搭建了可运行的 Web 应用骨架：
 
-- Next.js web UI in `apps/web`
-- FastAPI backend in `apps/api`
-- A health-check API
-- A fixture workflow API that returns traceable reviews, findings, requirements, and test cases
-- Test commands for both sides
+- `apps/web` 中的 Next.js 前端
+- `apps/api` 中的 FastAPI 后端
+- 后端健康检查 API
+- 示例工作流 API，可返回可追溯的评论、发现、需求和测试用例
+- 前后端测试命令
 
-## Requirements
+## 环境要求
 
-- Node.js 24 or newer
-- npm 11 or newer
-- Python 3.14 via the Windows `py` launcher
+- Node.js 24 或更新版本
+- npm 11 或更新版本
+- 通过 Windows `py` 启动器使用 Python 3.14
 
-## Install
+## 安装依赖
 
 ```powershell
 npm install
 py -m pip install -r apps/api/requirements.txt
 ```
 
-## Run locally
+## 本地运行
 
 ```powershell
 npm run dev
 ```
 
-The web app starts on http://localhost:3000 and the API starts on http://localhost:8000.
+前端会启动在 http://localhost:3000，后端会启动在 http://localhost:8000。
 
-Click **Start analysis** to run the fixture workflow against the local API.
+点击 **开始分析** 可以调用本地 API，运行内置的示例工作流。
 
-## Test
+## 运行测试
 
 ```powershell
 npm run test
 ```
 
-## Environment
+## 环境变量
 
-Copy `.env.example` to `.env.local` for local frontend settings. Keep API keys out of git.
+将 `.env.example` 复制为 `.env.local` 后可配置本地前端。不要将 API key 或其他密钥提交到 Git。

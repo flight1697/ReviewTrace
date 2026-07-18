@@ -4,11 +4,11 @@ import { Activity, Play, Upload } from "lucide-react";
 import { useState } from "react";
 
 const stages = [
-  ["Scope", "Waiting"],
-  ["Reviews", "Waiting"],
-  ["Evidence", "Waiting"],
-  ["PRD", "Waiting"],
-  ["Tests", "Waiting"],
+  ["范围", "等待中"],
+  ["评论", "等待中"],
+  ["证据", "等待中"],
+  ["PRD", "等待中"],
+  ["测试", "等待中"],
 ] as const;
 
 type WorkflowStage = {
@@ -71,17 +71,23 @@ type WorkflowRun = {
 
 const defaultAppStoreLink =
   "https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684";
-const defaultAnalysisGoal = "Focus on subscription conversion complaints";
+const defaultAnalysisGoal = "关注订阅转化相关投诉";
 const apiUrl =
   process.env.NEXT_PUBLIC_REVIEWTRACE_API_URL ?? "http://localhost:8000";
 const stageLabels: Record<string, string> = {
-  analysis: "Evidence",
-  cleaning: "Cleaning",
+  analysis: "证据",
+  cleaning: "清洗",
   prd: "PRD",
-  reviews: "Reviews",
-  scope: "Scope",
-  tests: "Tests",
-  validation: "Validation",
+  reviews: "评论",
+  scope: "范围",
+  tests: "测试",
+  validation: "校验",
+};
+const statusLabels: Record<string, string> = {
+  complete: "已完成",
+  failed: "失败",
+  pending: "等待中",
+  running: "运行中",
 };
 
 export default function Home() {
@@ -109,7 +115,7 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        throw new Error("Workflow request failed");
+        throw new Error("工作流请求失败");
       }
 
       setRun((await response.json()) as WorkflowRun);
@@ -119,7 +125,7 @@ export default function Home() {
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : "Workflow request failed",
+          : "工作流请求失败",
       );
     }
   }
@@ -127,13 +133,13 @@ export default function Home() {
   const visibleStages = run
     ? run.stages.map((stage) => [
         stageLabels[stage.name] ?? stage.name,
-        stage.status,
+        statusLabels[stage.status] ?? stage.status,
       ])
     : stages;
 
   return (
     <main className="shell">
-      <section className="workspace" aria-label="ReviewTrace workspace">
+      <section className="workspace" aria-label="ReviewTrace 工作台">
         <div className="panel">
           <div className="brand">
             <div className="brand-mark" aria-hidden="true">
@@ -142,14 +148,14 @@ export default function Home() {
             <div>
               <h1>ReviewTrace</h1>
               <p className="subtitle">
-                Turn App Store reviews into traceable product decisions.
+                将 App Store 评论转化为可追溯的产品决策。
               </p>
             </div>
           </div>
 
           <form className="form">
             <label className="field">
-              <span>App Store link</span>
+              <span>App Store 链接</span>
               <input
                 name="appStoreLink"
                 placeholder="https://apps.apple.com/us/app/.../id839285684"
@@ -160,10 +166,10 @@ export default function Home() {
             </label>
 
             <label className="field">
-              <span>Analysis goal</span>
+              <span>分析目标</span>
               <textarea
                 name="analysisGoal"
-                placeholder="Focus on subscription conversion, low-rating reviews, workout usability..."
+                placeholder="例如：关注订阅转化、低评分评论、训练可用性..."
                 value={analysisGoal}
                 onChange={(event) => setAnalysisGoal(event.target.value)}
               />
@@ -177,18 +183,18 @@ export default function Home() {
                 type="button"
               >
                 <Play size={18} aria-hidden="true" />
-                {status === "running" ? "Running" : "Start analysis"}
+                {status === "running" ? "分析中" : "开始分析"}
               </button>
               <button className="secondary" type="button">
                 <Upload size={18} aria-hidden="true" />
-                Import reviews
+                导入评论
               </button>
             </div>
           </form>
         </div>
 
         <div className="dashboard">
-          <div className="stage-list" aria-label="Workflow stages">
+          <div className="stage-list" aria-label="工作流阶段">
             {visibleStages.map(([name, stageStatus]) => (
               <div className="stage" key={name}>
                 <strong>{name}</strong>
@@ -197,12 +203,11 @@ export default function Home() {
             ))}
           </div>
 
-          <section className="artifact" aria-label="Analysis deliverables">
+          <section className="artifact" aria-label="分析交付物">
             <div>
-              <h2>Analysis workspace</h2>
+              <h2>分析工作台</h2>
               <p className="subtitle">
-                Raw reviews, cleaned data, findings, requirements, and test cases
-                will appear here as the workflow runs.
+                工作流运行后，这里会展示原始评论、清洗数据、发现、需求和测试用例。
               </p>
             </div>
 
@@ -212,15 +217,15 @@ export default function Home() {
               <div className="run-output">
                 <dl className="run-meta">
                   <div>
-                    <dt>Run</dt>
+                    <dt>运行编号</dt>
                     <dd>{run.runId}</dd>
                   </div>
                   <div>
-                    <dt>Source</dt>
+                    <dt>数据源</dt>
                     <dd>{run.source.label}</dd>
                   </div>
                   <div>
-                    <dt>Reviews retained</dt>
+                    <dt>保留评论</dt>
                     <dd>
                       {run.cleaningSummary.retainedCount} /{" "}
                       {run.cleaningSummary.inputCount}
@@ -230,24 +235,24 @@ export default function Home() {
 
                 <div className="artifact-grid">
                   <article className="artifact-item">
-                    <h3>Review evidence</h3>
+                    <h3>评论证据</h3>
                     {run.reviews.map((review) => (
                       <p key={review.id}>
-                        <strong>{review.id}</strong>: {review.title} (
-                        {review.rating} stars)
+                        <strong>{review.id}</strong>：{review.title}（
+                        {review.rating} 星）
                       </p>
                     ))}
                   </article>
                   <article className="artifact-item">
-                    <h3>Finding</h3>
+                    <h3>发现</h3>
                     {run.findings.map((finding) => (
                       <p key={finding.id}>
-                        {finding.title} Evidence: {finding.reviewIds.join(", ")}
+                        {finding.title} 证据：{finding.reviewIds.join(", ")}
                       </p>
                     ))}
                   </article>
                   <article className="artifact-item">
-                    <h3>Requirement</h3>
+                    <h3>需求</h3>
                     {run.requirements.map((requirement) => (
                       <p key={requirement.id}>
                         {requirement.priority}: {requirement.title}
@@ -255,10 +260,10 @@ export default function Home() {
                     ))}
                   </article>
                   <article className="artifact-item">
-                    <h3>QA coverage</h3>
+                    <h3>QA 覆盖</h3>
                     {run.testCases.map((testCase) => (
                       <p key={testCase.id}>
-                        {testCase.title} Requirement: {testCase.requirementId}
+                        {testCase.title} 需求：{testCase.requirementId}
                       </p>
                     ))}
                   </article>
@@ -273,20 +278,20 @@ export default function Home() {
             ) : (
               <div className="artifact-grid">
                 <article className="artifact-item">
-                  <h3>Review evidence</h3>
-                  <p>Source reviews and normalized fields.</p>
+                  <h3>评论证据</h3>
+                  <p>原始评论和标准化字段。</p>
                 </article>
                 <article className="artifact-item">
-                  <h3>Product plan</h3>
-                  <p>Findings, version scope, and PRD requirements.</p>
+                  <h3>产品计划</h3>
+                  <p>发现、版本范围和 PRD 需求。</p>
                 </article>
                 <article className="artifact-item">
-                  <h3>Traceability</h3>
-                  <p>Review-to-finding-to-requirement links.</p>
+                  <h3>追溯链</h3>
+                  <p>评论到发现再到需求的关联关系。</p>
                 </article>
                 <article className="artifact-item">
-                  <h3>QA coverage</h3>
-                  <p>Test cases linked to source evidence.</p>
+                  <h3>QA 覆盖</h3>
+                  <p>与原始证据关联的测试用例。</p>
                 </article>
               </div>
             )}

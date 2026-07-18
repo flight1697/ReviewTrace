@@ -11,7 +11,7 @@ def test_health_check_identifies_reviewtrace_api():
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
-        "service": "ReviewTrace API",
+        "service": "ReviewTrace 后端服务",
     }
 
 
@@ -22,7 +22,7 @@ def test_fixture_workflow_returns_traceable_artifacts():
         "/workflow/runs",
         json={
             "appStoreUrl": "https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684",
-            "analysisGoal": "Focus on subscription conversion complaints",
+            "analysisGoal": "关注订阅转化相关投诉",
             "sourceMode": "fixture",
         },
     )
@@ -30,7 +30,8 @@ def test_fixture_workflow_returns_traceable_artifacts():
     assert response.status_code == 200
     body = response.json()
     assert body["source"]["mode"] == "fixture"
-    assert body["scope"]["analysisGoal"] == "Focus on subscription conversion complaints"
+    assert body["source"]["label"] == "缓存示例数据集"
+    assert body["scope"]["analysisGoal"] == "关注订阅转化相关投诉"
     assert body["stages"] == [
         {"name": "scope", "status": "complete"},
         {"name": "reviews", "status": "complete"},
@@ -52,5 +53,5 @@ def test_fixture_workflow_returns_traceable_artifacts():
     assert test_case["requirementId"] == requirement["id"]
     assert test_case["sourceReviewIds"] == finding["reviewIds"]
     assert body["validationMessages"] == [
-        "All findings, requirements, and test cases reference fixture evidence."
+        "所有发现、需求和测试用例都已关联示例评论证据。"
     ]

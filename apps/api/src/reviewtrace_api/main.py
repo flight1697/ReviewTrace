@@ -18,7 +18,7 @@ app.add_middleware(
 def health_check() -> dict[str, str]:
     return {
         "status": "ok",
-        "service": "ReviewTrace API",
+        "service": "ReviewTrace 后端服务",
     }
 
 
@@ -36,7 +36,7 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
         "runId": "fixture-run-001",
         "source": {
             "mode": request.source_mode,
-            "label": "Cached fixture dataset",
+            "label": "缓存示例数据集",
         },
         "scope": {
             "appStoreUrl": request.app_store_url,
@@ -56,16 +56,16 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
             {
                 "id": review_ids[0],
                 "rating": 2,
-                "title": "Trial ended before I understood the plan",
-                "body": "I liked the workouts, but the subscription prompt appeared before I knew what was included.",
+                "title": "还没理解套餐内容，试用就结束了",
+                "body": "我喜欢这些训练内容，但在我弄清楚包含哪些功能之前，订阅弹窗就出现了。",
                 "appVersion": "24.8",
                 "source": "fixture",
             },
             {
                 "id": review_ids[1],
                 "rating": 3,
-                "title": "Needs clearer pricing",
-                "body": "The app is useful, but pricing and cancellation details were hard to find.",
+                "title": "价格说明需要更清楚",
+                "body": "这个 App 很有用，但价格和取消订阅的说明不太好找。",
                 "appVersion": "24.8",
                 "source": "fixture",
             },
@@ -78,18 +78,18 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
         "findings": [
             {
                 "id": "finding-subscription-clarity",
-                "title": "Subscription value and cancellation details are not clear enough before conversion.",
+                "title": "订阅转化前，订阅价值和取消方式说明不够清楚。",
                 "reviewIds": review_ids,
                 "sampleCount": 2,
-                "confidence": "medium",
-                "method": "fixture model stub",
+                "confidence": "中等",
+                "method": "示例模型桩",
                 "conflictingEvidence": [],
             }
         ],
         "requirements": [
             {
                 "id": "requirement-subscription-preview",
-                "title": "Show subscription value, included features, price, and cancellation path before purchase.",
+                "title": "购买前展示订阅价值、包含功能、价格和取消路径。",
                 "priority": "P1",
                 "findingIds": ["finding-subscription-clarity"],
                 "assumption": False,
@@ -98,18 +98,18 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
         "testCases": [
             {
                 "id": "test-subscription-preview-content",
-                "title": "User sees subscription details before starting purchase.",
+                "title": "用户在发起购买前可以看到订阅详情。",
                 "requirementId": "requirement-subscription-preview",
                 "sourceReviewIds": review_ids,
                 "steps": [
-                    "Open the subscription entry point.",
-                    "Review the purchase preview.",
-                    "Verify included features, price, and cancellation details are visible before purchase confirmation.",
+                    "打开订阅入口。",
+                    "查看购买前预览。",
+                    "确认在购买确认前可以看到包含功能、价格和取消订阅说明。",
                 ],
-                "expectedResult": "The preview explains the subscription clearly before the user commits.",
+                "expectedResult": "购买前预览能在用户确认前清楚解释订阅内容。",
             }
         ],
         "validationMessages": [
-            "All findings, requirements, and test cases reference fixture evidence."
+            "所有发现、需求和测试用例都已关联示例评论证据。"
         ],
     }

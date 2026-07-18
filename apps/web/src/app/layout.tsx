@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "ReviewTrace",
-  description: "Trace App Store reviews into grounded product plans.",
+  description: "将 App Store 评论转化为有证据链支撑的产品计划。",
 };
 
 export default function RootLayout({

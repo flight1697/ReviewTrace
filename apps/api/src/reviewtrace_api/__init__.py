@@ -1,1 +1,1 @@
-"""ReviewTrace API package."""
+"""ReviewTrace 后端服务包。"""
