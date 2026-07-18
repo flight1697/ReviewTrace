@@ -35,6 +35,8 @@ npm run dev
 
 也可以点击 **导入评论** 选择 `.json` 或 `.csv` 文件。导入的数据会走同一个 workflow API，并返回原始评论、清洗结果和基础评分统计。
 
+内置离线样例数据位于 `apps/api/src/reviewtrace_api/fixtures/sample_reviews.json`。
+
 ## 评论导入格式
 
 JSON 支持数组，或包含 `reviews` 字段的对象：

@@ -2,6 +2,7 @@ import csv
 import io
 import json
 from collections import Counter
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
@@ -42,25 +43,8 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
     if request.source_mode == "import":
         return run_import_workflow(request)
 
-    review_ids = ["fixture-review-001", "fixture-review-002"]
-    reviews = [
-        {
-            "id": review_ids[0],
-            "rating": 2,
-            "title": "还没理解套餐内容，试用就结束了",
-            "body": "我喜欢这些训练内容，但在我弄清楚包含哪些功能之前，订阅弹窗就出现了。",
-            "appVersion": "24.8",
-            "source": "fixture",
-        },
-        {
-            "id": review_ids[1],
-            "rating": 3,
-            "title": "价格说明需要更清楚",
-            "body": "这个 App 很有用，但价格和取消订阅的说明不太好找。",
-            "appVersion": "24.8",
-            "source": "fixture",
-        },
-    ]
+    reviews = load_fixture_reviews()
+    review_ids = [str(review["id"]) for review in reviews]
 
     return {
         "runId": "fixture-run-001",
@@ -80,6 +64,7 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
             "inputCount": 2,
             "retainedCount": 2,
             "duplicateCount": 0,
+            "discardedEmptyCount": 0,
         },
         "ratingSummary": summarize_ratings(reviews),
         "findings": [
@@ -130,7 +115,8 @@ def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
         raise HTTPException(status_code=400, detail="导入数据不能为空。")
 
     raw_reviews = parse_imported_reviews(dataset_format, dataset_text)
-    reviews = retain_review_content(raw_reviews)
+    cleaning_result = clean_reviews(raw_reviews)
+    reviews = cleaning_result["reviews"]
     review_ids = [review["id"] for review in reviews]
 
     return {
@@ -147,11 +133,7 @@ def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
         "stages": completed_stages(),
         "rawReviews": raw_reviews,
         "reviews": reviews,
-        "cleaningSummary": {
-            "inputCount": len(raw_reviews),
-            "retainedCount": len(reviews),
-            "duplicateCount": 0,
-        },
+        "cleaningSummary": cleaning_result["summary"],
         "ratingSummary": summarize_ratings(reviews),
         "findings": [
             {
@@ -170,6 +152,11 @@ def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
             "导入数据已完成结构化、清洗和基础统计，后续语义分析会在模型阶段替换当前占位结果。"
         ],
     }
+
+
+def load_fixture_reviews() -> list[dict[str, object]]:
+    fixture_path = Path(__file__).with_name("fixtures") / "sample_reviews.json"
+    return parse_json_reviews(fixture_path.read_text(encoding="utf-8"))
 
 
 def completed_stages() -> list[dict[str, str]]:
@@ -246,12 +233,48 @@ def parse_rating(value: object) -> int:
     return max(0, min(rating, 5))
 
 
-def retain_review_content(reviews: list[dict[str, object]]) -> list[dict[str, object]]:
-    return [
-        review
-        for review in reviews
-        if str(review.get("title") or "").strip() or str(review.get("body") or "").strip()
-    ]
+def clean_reviews(reviews: list[dict[str, object]]) -> dict[str, object]:
+    retained: list[dict[str, object]] = []
+    seen_fingerprints: set[str] = set()
+    duplicate_count = 0
+    discarded_empty_count = 0
+
+    for review in reviews:
+        if not has_review_content(review):
+            discarded_empty_count += 1
+            continue
+
+        fingerprint = review_fingerprint(review)
+        if fingerprint in seen_fingerprints:
+            duplicate_count += 1
+            continue
+
+        seen_fingerprints.add(fingerprint)
+        retained.append(review)
+
+    return {
+        "reviews": retained,
+        "summary": {
+            "inputCount": len(reviews),
+            "retainedCount": len(retained),
+            "duplicateCount": duplicate_count,
+            "discardedEmptyCount": discarded_empty_count,
+        },
+    }
+
+
+def has_review_content(review: dict[str, object]) -> bool:
+    return bool(str(review.get("title") or "").strip() or str(review.get("body") or "").strip())
+
+
+def review_fingerprint(review: dict[str, object]) -> str:
+    title = normalize_text_for_fingerprint(str(review.get("title") or ""))
+    body = normalize_text_for_fingerprint(str(review.get("body") or ""))
+    return f"{title}\n{body}"
+
+
+def normalize_text_for_fingerprint(value: str) -> str:
+    return " ".join(value.strip().lower().split())
 
 
 def summarize_ratings(reviews: list[dict[str, object]]) -> dict[str, object]:

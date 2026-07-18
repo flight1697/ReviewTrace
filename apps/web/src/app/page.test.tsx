@@ -62,6 +62,7 @@ describe("ReviewTrace 首页", () => {
             inputCount: 1,
             retainedCount: 1,
             duplicateCount: 0,
+            discardedEmptyCount: 0,
           },
           rawReviews: [
             {
@@ -185,6 +186,7 @@ describe("ReviewTrace 首页", () => {
             inputCount: 1,
             retainedCount: 1,
             duplicateCount: 0,
+            discardedEmptyCount: 0,
           },
           ratingSummary: {
             averageRating: 1,

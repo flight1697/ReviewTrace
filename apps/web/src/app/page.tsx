@@ -64,6 +64,7 @@ type WorkflowRun = {
     inputCount: number;
     retainedCount: number;
     duplicateCount: number;
+    discardedEmptyCount: number;
   };
   ratingSummary: {
     averageRating: number;
@@ -278,6 +279,14 @@ export default function Home() {
                   <div>
                     <dt>平均评分</dt>
                     <dd>{run.ratingSummary.averageRating}</dd>
+                  </div>
+                  <div>
+                    <dt>重复评论</dt>
+                    <dd>{run.cleaningSummary.duplicateCount}</dd>
+                  </div>
+                  <div>
+                    <dt>空评论</dt>
+                    <dd>{run.cleaningSummary.discardedEmptyCount}</dd>
                   </div>
                 </dl>
 

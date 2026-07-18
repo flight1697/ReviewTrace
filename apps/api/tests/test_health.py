@@ -101,6 +101,7 @@ def test_imported_json_reviews_run_through_workflow():
         "inputCount": 2,
         "retainedCount": 2,
         "duplicateCount": 0,
+        "discardedEmptyCount": 0,
     }
     assert body["ratingSummary"] == {
         "averageRating": 3.0,
@@ -140,3 +141,63 @@ def test_imported_csv_reviews_run_through_workflow():
     assert body["reviews"][0]["id"] == "csv-001"
     assert body["reviews"][0]["title"] == "订阅说明不清楚"
     assert body["ratingSummary"]["averageRating"] == 3.0
+
+
+def test_imported_reviews_are_cleaned_and_deduplicated():
+    client = TestClient(app)
+
+    response = client.post(
+        "/workflow/runs",
+        json={
+            "appStoreUrl": "https://apps.apple.com/us/app/example/id123456789",
+            "analysisGoal": "关注重复和空评论处理",
+            "sourceMode": "import",
+            "datasetFormat": "json",
+            "datasetText": """
+            {
+              "reviews": [
+                {
+                  "id": "dup-001",
+                  "rating": 2,
+                  "title": "订阅说明不清楚",
+                  "body": "价格和取消方式需要更明确。"
+                },
+                {
+                  "id": "dup-002",
+                  "rating": 2,
+                  "title": "  订阅说明不清楚  ",
+                  "body": "价格和取消方式需要更明确。"
+                },
+                {
+                  "id": "empty-001",
+                  "rating": 5,
+                  "title": "",
+                  "body": ""
+                },
+                {
+                  "id": "unique-001",
+                  "rating": 4,
+                  "title": "训练体验不错",
+                  "body": "动作提示很清晰。"
+                }
+              ]
+            }
+            """,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+
+    assert len(body["rawReviews"]) == 4
+    assert body["cleaningSummary"] == {
+        "inputCount": 4,
+        "retainedCount": 2,
+        "duplicateCount": 1,
+        "discardedEmptyCount": 1,
+    }
+    assert [review["id"] for review in body["reviews"]] == ["dup-001", "unique-001"]
+    assert body["ratingSummary"] == {
+        "averageRating": 3.0,
+        "ratingCounts": {"2": 1, "4": 1},
+    }
