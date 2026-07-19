@@ -165,16 +165,24 @@ def test_fixture_workflow_returns_traceable_artifacts():
     assert requirement["findingIds"] == [finding["id"]]
     assert requirement["sourceReviewIds"] == finding["reviewIds"]
     assert requirement["boundaries"]
+    assert requirement["acceptanceCriteria"]
     assert body["versionPlan"]["versions"][0]["requirementIds"] == [requirement["id"]]
     assert body["prd"]["requirements"][0]["id"] == requirement["id"]
     assert test_case["requirementId"] == requirement["id"]
     assert test_case["sourceReviewIds"] == finding["reviewIds"]
+    assert test_case["verificationPoints"] == requirement["acceptanceCriteria"]
     assert body["traceabilityValidation"] == {
         "status": "passed",
         "unsupportedFindingIds": [],
         "unsupportedRequirementIds": [],
         "unsupportedTestCaseIds": [],
     }
+    assert body["analysisScope"]["scopeReviewIds"]
+    assert any(
+        detail.startswith("范围样本：") for detail in body["stageReports"][0]["details"]
+    )
+    assert body["stageReports"][4]["details"][0].startswith("PRD 目标：")
+    assert body["stageReports"][6]["summary"] == "追溯校验通过"
     assert body["validationMessages"] == [
         "所有发现、需求和测试用例都已关联示例评论证据。"
     ]
@@ -226,6 +234,35 @@ def test_live_app_store_reviews_run_through_same_workflow(monkeypatch):
     assert [review["id"] for review in body["reviews"]] == ["live-001", "live-002"]
     assert body["requirements"][0]["sourceReviewIds"] == ["live-001", "live-002"]
     assert body["testCases"][0]["sourceReviewIds"] == ["live-001", "live-002"]
+
+
+def test_live_empty_review_source_does_not_fabricate_findings(monkeypatch):
+    client = TestClient(app)
+
+    monkeypatch.setattr(workflow, "fetch_app_store_reviews", lambda app_id, storefront: [])
+
+    response = client.post(
+        "/workflow/runs",
+        json={
+            "appStoreUrl": "https://apps.apple.com/us/app/example/id123456789",
+            "analysisGoal": "关注订阅转化",
+            "sourceMode": "live",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reviews"] == []
+    assert body["findings"] == []
+    assert body["requirements"] == []
+    assert body["testCases"] == []
+    assert body["dataLimitations"] == ["没有获取到可分析评论，请检查链接或改用导入评论。"]
+    assert body["traceabilityValidation"] == {
+        "status": "passed",
+        "unsupportedFindingIds": [],
+        "unsupportedRequirementIds": [],
+        "unsupportedTestCaseIds": [],
+    }
 
 
 def test_live_app_store_flow_requires_us_app_store_link():
@@ -383,6 +420,20 @@ def test_imported_json_reviews_run_through_workflow():
     assert "源评论" in test_case["expectedResult"]
     assert body["versionPlan"]["versions"][0]["name"] == "版本 1：证据支撑的核心改进"
     assert body["prd"]["objective"] == "围绕「关注低评分评论」回应已导入评论中的高证据问题。"
+    assert body["analysisScope"]["requestedGoal"] == "关注低评分评论"
+    assert "低评分反馈" in body["analysisScope"]["focusAreas"]
+    assert body["analysisScope"]["scopeReviewIds"] == ["json-001", "json-002"]
+    assert body["prd"]["scopeSummary"] == body["analysisScope"]
+    assert [report["name"] for report in body["stageReports"]] == [
+        "scope",
+        "reviews",
+        "cleaning",
+        "analysis",
+        "prd",
+        "tests",
+        "validation",
+    ]
+    assert body["stageReports"][0]["summary"] == "关注低评分评论"
 
 
 def test_imported_csv_reviews_run_through_workflow():
@@ -486,6 +537,13 @@ def test_openai_provider_can_drive_semantic_findings(monkeypatch):
         assert model == "gpt-5.6-sol"
         return """
         {
+          "scope": {
+            "focusSummary": "新手训练入口解释不足",
+            "focusAreas": ["新手训练可用性"],
+            "dataSignals": ["低评分评论明确提到解释不足"],
+            "constraints": ["仅覆盖新手训练开始前体验"],
+            "uncertaintyNotes": ["样本量为 1 条"]
+          },
           "findings": [
             {
               "id": "finding-onboarding-clarity",
@@ -530,6 +588,15 @@ def test_openai_provider_can_drive_semantic_findings(monkeypatch):
         "provider": "openai",
         "model": "gpt-5.6-sol",
         "modelDriven": True,
+    }
+    assert body["analysisScope"] == {
+        "requestedGoal": "关注新手训练可用性",
+        "focusSummary": "新手训练入口解释不足",
+        "focusAreas": ["新手训练可用性"],
+        "dataSignals": ["低评分评论明确提到解释不足"],
+        "constraints": ["仅覆盖新手训练开始前体验"],
+        "uncertaintyNotes": ["样本量为 1 条"],
+        "scopeReviewIds": ["json-001"],
     }
     assert body["findings"] == [
         {

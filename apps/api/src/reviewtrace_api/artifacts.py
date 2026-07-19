@@ -52,6 +52,16 @@ class AnalysisSummary(BaseModel):
     modelDriven: bool
 
 
+class AnalysisScope(BaseModel):
+    requestedGoal: str
+    focusSummary: str
+    focusAreas: list[str]
+    dataSignals: list[str]
+    constraints: list[str]
+    uncertaintyNotes: list[str]
+    scopeReviewIds: list[str] = Field(default_factory=list)
+
+
 class Evidence(BaseModel):
     reviewId: str
     excerpt: str
@@ -77,6 +87,7 @@ class Requirement(BaseModel):
     sourceReviewIds: list[str]
     boundaries: list[str]
     assumption: bool
+    acceptanceCriteria: list[str] = Field(default_factory=list)
 
 
 class VersionPlanItem(BaseModel):
@@ -94,10 +105,20 @@ class VersionPlan(BaseModel):
 class ProductRequirementDocument(BaseModel):
     title: str
     objective: str
+    scopeSummary: AnalysisScope
     versions: list[VersionPlanItem]
     requirements: list[Requirement]
     successMetrics: list[str]
     assumptions: list[Requirement]
+
+
+class StageReport(BaseModel):
+    name: str
+    status: str
+    summary: str
+    details: list[str] = Field(default_factory=list)
+    revisions: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
 
 
 class TestCase(BaseModel):
@@ -107,6 +128,7 @@ class TestCase(BaseModel):
     sourceReviewIds: list[str]
     steps: list[str]
     expectedResult: str
+    verificationPoints: list[str] = Field(default_factory=list)
 
 
 class TraceabilityValidation(BaseModel):
@@ -121,11 +143,13 @@ class WorkflowRun(BaseModel):
     source: WorkflowSource
     scope: WorkflowScope
     stages: list[WorkflowStage]
+    analysisScope: AnalysisScope
     rawReviews: list[Review]
     reviews: list[Review]
     cleaningSummary: CleaningSummary
     ratingSummary: RatingSummary
     analysisSummary: AnalysisSummary
+    stageReports: list[StageReport]
     findings: list[Finding]
     requirements: list[Requirement]
     versionPlan: VersionPlan

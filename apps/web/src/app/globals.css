@@ -218,6 +218,7 @@ dd {
 }
 
 .section-heading h2,
+.section-heading h3,
 .empty-state h2 {
   margin-top: 6px;
   color: #12231e;
@@ -523,7 +524,9 @@ textarea:focus {
 }
 
 .insight-panel,
-.artifact-panel {
+.artifact-panel,
+.scope-panel,
+.progress-panel {
   border: 1px solid #e3ebe8;
   border-radius: 22px;
   padding: 18px;
@@ -547,6 +550,79 @@ textarea:focus {
   display: grid;
   gap: 12px;
   margin-top: 16px;
+}
+
+.scope-panel,
+.progress-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.scope-card {
+  gap: 12px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scope-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.scope-columns strong,
+.report-block strong {
+  display: block;
+  color: #17211d;
+  font-size: 13px;
+}
+
+.report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.report-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #e5eeea;
+  border-radius: 18px;
+  padding: 16px;
+  background: #fbfefd;
+}
+
+.report-card ul {
+  margin: 0 0 0 18px;
+  padding: 0;
+  color: #53625d;
+  line-height: 1.6;
+}
+
+.report-summary {
+  color: #26352f;
+  line-height: 1.55;
+}
+
+.report-block {
+  border-radius: 14px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.report-block p {
+  margin-top: 6px;
+  color: #53625d;
+  line-height: 1.5;
+}
+
+.report-block.error {
+  color: #9a3412;
+  background: #fff7ed;
 }
 
 .finding-card,
@@ -759,6 +835,8 @@ blockquote span {
   .source-picker,
   .summary-grid,
   .empty-grid,
+  .scope-columns,
+  .report-grid,
   .timeline-card {
     grid-template-columns: 1fr;
   }

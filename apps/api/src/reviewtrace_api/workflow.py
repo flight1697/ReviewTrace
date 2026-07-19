@@ -19,6 +19,10 @@ from pydantic import BaseModel, Field
 from reviewtrace_api.artifacts import validated_workflow_run
 
 
+STAGE_STATUS_COMPLETE = "complete"
+STAGE_STATUS_FAILED = "failed"
+
+
 class WorkflowRunRequest(BaseModel):
     app_store_url: str = Field(alias="appStoreUrl")
     analysis_goal: str = Field(default="", alias="analysisGoal")
@@ -161,19 +165,46 @@ def complete_review_workflow(
 ) -> dict[str, object]:
     cleaning_result = clean_reviews(raw_reviews)
     reviews = cleaning_result["reviews"]
+    scope_reviews = select_scope_reviews(reviews, analysis_goal)
     analysis = (
-        analysis_override(reviews)
+        analysis_override(scope_reviews)
         if analysis_override
-        else analyze_reviews(reviews, analysis_goal)
+        else analyze_reviews(scope_reviews, analysis_goal)
+    )
+    analysis_scope = normalize_analysis_scope(
+        analysis.get("scope"),
+        analysis_goal,
+        scope_reviews,
     )
     findings = enrich_findings_with_evidence(analysis["findings"], reviews)
-    artifacts = generate_product_artifacts(analysis_goal, findings, reviews)
+    artifacts = generate_product_artifacts(
+        analysis_goal,
+        analysis_scope,
+        findings,
+        reviews,
+    )
+    stage_reports = build_stage_reports(
+        raw_reviews=raw_reviews,
+        reviews=reviews,
+        scope_reviews=scope_reviews,
+        cleaning_summary=cleaning_result["summary"],
+        analysis_summary=analysis["summary"],
+        analysis_scope=analysis_scope,
+        findings=findings,
+        requirements=artifacts["requirements"],
+        version_plan=artifacts["versionPlan"],
+        prd=artifacts["prd"],
+        test_cases=artifacts["testCases"],
+        traceability_validation=artifacts["traceabilityValidation"],
+    )
 
     return {
+        "analysisScope": analysis_scope,
         "cleaningSummary": cleaning_result["summary"],
         "reviews": reviews,
         "ratingSummary": summarize_ratings(reviews),
         "analysisSummary": analysis["summary"],
+        "stageReports": stage_reports,
         "findings": artifacts["findings"],
         "requirements": artifacts["requirements"],
         "versionPlan": artifacts["versionPlan"],
@@ -197,11 +228,13 @@ def workflow_run_payload(
         "source": source,
         "scope": scope,
         "stages": completed_stages(),
+        "analysisScope": workflow["analysisScope"],
         "rawReviews": raw_reviews,
         "reviews": workflow["reviews"],
         "cleaningSummary": workflow["cleaningSummary"],
         "ratingSummary": workflow["ratingSummary"],
         "analysisSummary": workflow["analysisSummary"],
+        "stageReports": workflow["stageReports"],
         "findings": workflow["findings"],
         "requirements": workflow["requirements"],
         "versionPlan": workflow["versionPlan"],
@@ -338,7 +371,12 @@ def analyze_reviews(
                 status_code=502,
                 detail="模型服务不可用，请检查 API key、网络或改用确定性兜底。",
             ) from error
-        findings = parse_model_findings(model_output, reviews, f"openai:{model}")
+        analysis = parse_model_analysis(
+            model_output,
+            reviews,
+            analysis_goal,
+            f"openai:{model}",
+        )
 
         return {
             "summary": {
@@ -346,7 +384,8 @@ def analyze_reviews(
                 "model": model,
                 "modelDriven": True,
             },
-            "findings": findings,
+            "scope": analysis["scope"],
+            "findings": analysis["findings"],
         }
 
     if provider == "deepseek" and os.getenv("DEEPSEEK_API_KEY"):
@@ -358,7 +397,12 @@ def analyze_reviews(
                 status_code=502,
                 detail="DeepSeek 模型服务不可用，请检查 API key、网络或改用确定性兜底。",
             ) from error
-        findings = parse_model_findings(model_output, reviews, f"deepseek:{model}")
+        analysis = parse_model_analysis(
+            model_output,
+            reviews,
+            analysis_goal,
+            f"deepseek:{model}",
+        )
 
         return {
             "summary": {
@@ -366,10 +410,11 @@ def analyze_reviews(
                 "model": model,
                 "modelDriven": True,
             },
-            "findings": findings,
+            "scope": analysis["scope"],
+            "findings": analysis["findings"],
         }
 
-    return build_stub_analysis(reviews)
+    return build_stub_analysis(reviews, analysis_goal)
 
 
 def configured_model_name(provider: str) -> str:
@@ -415,16 +460,14 @@ def model_configuration() -> dict[str, object]:
     }
 
 
-def build_stub_analysis(reviews: list[dict[str, object]]) -> dict[str, object]:
+def build_stub_analysis(
+    reviews: list[dict[str, object]],
+    analysis_goal: str = "",
+) -> dict[str, object]:
     review_ids = [str(review["id"]) for review in reviews]
-
-    return {
-        "summary": {
-            "provider": "stub",
-            "model": "deterministic-import-summary",
-            "modelDriven": False,
-        },
-        "findings": [
+    findings: list[dict[str, object]] = []
+    if review_ids:
+        findings.append(
             {
                 "id": "finding-imported-feedback",
                 "title": f"导入评论中出现了 {len(reviews)} 条可分析反馈。",
@@ -434,8 +477,274 @@ def build_stub_analysis(reviews: list[dict[str, object]]) -> dict[str, object]:
                 "method": "确定性导入摘要",
                 "conflictingEvidence": [],
             }
-        ],
+        )
+
+    return {
+        "summary": {
+            "provider": "stub",
+            "model": "deterministic-import-summary",
+            "modelDriven": False,
+        },
+        "scope": build_default_analysis_scope(analysis_goal or "确定性兜底分析", reviews),
+        "findings": findings,
     }
+
+
+def build_default_analysis_scope(
+    analysis_goal: str,
+    reviews: list[dict[str, object]],
+) -> dict[str, object]:
+    ratings = [int(review["rating"]) for review in reviews if int(review["rating"]) > 0]
+    versions = sorted(
+        {
+            str(review.get("appVersion") or "")
+            for review in reviews
+            if str(review.get("appVersion") or "").strip()
+        }
+    )
+    low_rating_count = sum(1 for rating in ratings if rating <= 2)
+    high_rating_count = sum(1 for rating in ratings if rating >= 4)
+    unique_rating_count = len(set(ratings))
+    signals = [
+        f"样本量 {len(reviews)} 条，清洗后结果可直接追溯到原始评论。",
+    ]
+    if ratings:
+        signals.append(
+            "评分分布："
+            + ", ".join(
+                f"{rating} 星 {sum(1 for item in ratings if item == rating)} 条"
+                for rating in sorted(set(ratings))
+            )
+        )
+    if versions:
+        signals.append(f"可见版本号：{', '.join(versions)}")
+    if low_rating_count and high_rating_count:
+        signals.append("同时存在低分和高分反馈，适合比较矛盾证据。")
+    elif low_rating_count:
+        signals.append("低评分反馈占比偏高，适合优先查找阻碍转化的环节。")
+    elif high_rating_count:
+        signals.append("高评分反馈占比偏高，适合保留有效体验并找出改进边界。")
+
+    focus_areas: list[str] = []
+    goal_text = analysis_goal.strip() or "综合评论证据"
+    goal_lower = goal_text.lower()
+    if any(term in goal_lower for term in ["订阅", "付费", "价格", "取消"]):
+        focus_areas.append("付费和订阅路径")
+    if any(term in goal_lower for term in ["训练", "锻炼", "课程", "动作"]):
+        focus_areas.append("训练体验和课程可用性")
+    if any(term in goal_lower for term in ["版本", "发布", "更新", "回归"]):
+        focus_areas.append("版本差异和回归信号")
+    if any(term in goal_lower for term in ["低评分", "差评", "一星", "二星"]):
+        focus_areas.append("低评分反馈")
+    if not focus_areas and low_rating_count:
+        focus_areas.append("低评分反馈")
+    if not focus_areas and unique_rating_count > 1:
+        focus_areas.append("跨评分段对照")
+    if not focus_areas:
+        focus_areas.append("综合用户反馈")
+
+    constraints = [
+        "只使用已采集评论中的证据。",
+        "证据不足时应标记为假设或降级为版本 2。",
+    ]
+    if len(reviews) < 10:
+        constraints.append("样本量偏小，结果应视为方向性信号。")
+
+    uncertainty_notes = [
+        "评论样本可能只覆盖公开最新评论样本，而非全部历史评论。",
+    ]
+    if not reviews:
+        uncertainty_notes.append("当前没有可分析评论。")
+    elif len(reviews) < 10:
+        uncertainty_notes.append("评论数量较少，适合做问题假设而不是强结论。")
+    if low_rating_count and high_rating_count:
+        uncertainty_notes.append("同一主题可能同时存在支持和反对证据。")
+
+    return {
+        "requestedGoal": goal_text,
+        "focusSummary": goal_text,
+        "focusAreas": focus_areas,
+        "dataSignals": signals,
+        "constraints": constraints,
+        "uncertaintyNotes": uncertainty_notes,
+        "scopeReviewIds": [str(review["id"]) for review in reviews],
+    }
+
+
+def select_scope_reviews(
+    reviews: list[dict[str, object]],
+    analysis_goal: str,
+) -> list[dict[str, object]]:
+    if len(reviews) <= 5:
+        return list(reviews)
+
+    goal_terms = analysis_goal_terms(analysis_goal)
+    if not goal_terms:
+        return list(reviews)
+
+    scored_reviews = [
+        (
+            review_scope_score(review, goal_terms, analysis_goal),
+            index,
+            review,
+        )
+        for index, review in enumerate(reviews)
+    ]
+    positive_reviews = [item for item in scored_reviews if item[0] > 0]
+    if not positive_reviews:
+        return list(reviews)
+
+    target_count = min(len(reviews), max(5, len(reviews) // 2))
+    selected_indexes = {
+        index for _, index, _ in sorted(
+            positive_reviews,
+            key=lambda item: (-item[0], item[1]),
+        )[:target_count]
+    }
+
+    selected_reviews = [
+        review for index, review in enumerate(reviews) if index in selected_indexes
+    ]
+    selected_reviews = diversify_scope_reviews(selected_reviews, reviews)
+
+    if len(selected_reviews) < 3:
+        return list(reviews)
+
+    return selected_reviews
+
+
+def analysis_goal_terms(analysis_goal: str) -> list[str]:
+    goal_lower = analysis_goal.lower()
+    return [
+        term
+        for term in [
+            "订阅",
+            "付费",
+            "价格",
+            "取消",
+            "训练",
+            "锻炼",
+            "课程",
+            "动作",
+            "版本",
+            "发布",
+            "更新",
+            "回归",
+            "低评分",
+            "差评",
+            "一星",
+            "二星",
+        ]
+        if term in goal_lower
+    ]
+
+
+def review_scope_score(
+    review: dict[str, object],
+    goal_terms: list[str],
+    analysis_goal: str,
+) -> int:
+    text = normalize_text_for_fingerprint(
+        f"{review.get('title') or ''} {review.get('body') or ''}"
+    )
+    score = 0
+
+    for term in goal_terms:
+        if term in text:
+            score += 3
+
+    rating = int(review.get("rating") or 0)
+    if any(term in analysis_goal for term in ["低评分", "差评", "一星", "二星"]):
+        if rating and rating <= 2:
+            score += 2
+
+    if any(term in analysis_goal for term in ["版本", "发布", "更新", "回归"]):
+        if str(review.get("appVersion") or "").strip():
+            score += 1
+
+    if any(term in analysis_goal for term in ["订阅", "付费", "价格", "取消"]):
+        if rating and rating <= 2:
+            score += 1
+
+    return score
+
+
+def diversify_scope_reviews(
+    selected_reviews: list[dict[str, object]],
+    all_reviews: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    selected_ids = {str(review["id"]) for review in selected_reviews}
+    has_low_rating = any(int(review["rating"]) <= 2 for review in selected_reviews)
+    has_high_rating = any(int(review["rating"]) >= 4 for review in selected_reviews)
+
+    if has_low_rating and not has_high_rating:
+        for review in all_reviews:
+            if str(review["id"]) not in selected_ids and int(review["rating"]) >= 4:
+                selected_reviews.append(review)
+                selected_ids.add(str(review["id"]))
+                break
+
+    if has_high_rating and not has_low_rating:
+        for review in all_reviews:
+            if str(review["id"]) not in selected_ids and int(review["rating"]) <= 2:
+                selected_reviews.append(review)
+                break
+
+    return [
+        review for review in all_reviews if str(review["id"]) in {
+            str(item["id"]) for item in selected_reviews
+        }
+    ]
+
+
+def normalize_analysis_scope(
+    scope_payload: object,
+    analysis_goal: str,
+    reviews: list[dict[str, object]],
+) -> dict[str, object]:
+    default_scope = build_default_analysis_scope(analysis_goal, reviews)
+    if not isinstance(scope_payload, dict):
+        return default_scope
+
+    focus_summary = str(
+        scope_payload.get("focusSummary") or default_scope["focusSummary"]
+    ).strip()
+    return {
+        "requestedGoal": analysis_goal.strip() or default_scope["requestedGoal"],
+        "focusSummary": focus_summary or default_scope["focusSummary"],
+        "focusAreas": sanitize_string_list(
+            scope_payload.get("focusAreas"),
+            default_scope["focusAreas"],
+        ),
+        "dataSignals": sanitize_string_list(
+            scope_payload.get("dataSignals"),
+            default_scope["dataSignals"],
+        ),
+        "constraints": sanitize_string_list(
+            scope_payload.get("constraints"),
+            default_scope["constraints"],
+        ),
+        "uncertaintyNotes": sanitize_string_list(
+            scope_payload.get("uncertaintyNotes"),
+            default_scope["uncertaintyNotes"],
+        ),
+        "scopeReviewIds": sanitize_string_list(
+            scope_payload.get("scopeReviewIds"),
+            default_scope["scopeReviewIds"],
+        ),
+    }
+
+
+def sanitize_string_list(
+    values: object,
+    fallback: list[str] | None = None,
+) -> list[str]:
+    if isinstance(values, list):
+        cleaned = [str(value).strip() for value in values if str(value).strip()]
+        if cleaned:
+            return cleaned
+
+    return list(fallback or [])
 
 
 def build_review_analysis_prompt(
@@ -456,10 +765,10 @@ def build_review_analysis_prompt(
     return "\n".join(
         [
             "你是严谨的 App Store 评论分析助手。",
-            "请根据分析目标，从评论中归纳主要用户问题。",
+            "请根据分析目标，从评论中先判断分析范围，再归纳主要用户问题。",
             "只能使用输入评论中存在的证据，不要编造 reviewId、样本数或结论。",
             "请只返回 JSON，不要返回 Markdown。",
-            "JSON 结构：{\"findings\":[{\"id\":\"...\",\"title\":\"...\",\"reviewIds\":[\"...\"],\"sampleCount\":1,\"confidence\":\"高/中/低\",\"conflictingEvidence\":[]}]}",
+            "JSON 结构：{\"scope\":{\"focusSummary\":\"...\",\"focusAreas\":[\"...\"],\"dataSignals\":[\"...\"],\"constraints\":[\"...\"],\"uncertaintyNotes\":[\"...\"],\"scopeReviewIds\":[\"...\"]},\"findings\":[{\"id\":\"...\",\"title\":\"...\",\"reviewIds\":[\"...\"],\"sampleCount\":1,\"confidence\":\"高/中/低\",\"conflictingEvidence\":[]}]}",
             f"分析目标：{analysis_goal or '无特定目标'}",
             "评论数据：",
             json.dumps(review_payload, ensure_ascii=False),
@@ -503,15 +812,40 @@ def call_deepseek_chat_api(prompt: str, model: str) -> str:
     return response.choices[0].message.content or ""
 
 
-def parse_model_findings(
+def parse_model_analysis(
     model_output: str,
     reviews: list[dict[str, object]],
+    analysis_goal: str,
     method: str,
-) -> list[dict[str, object]]:
+) -> dict[str, object]:
     try:
         parsed = json.loads(model_output)
     except json.JSONDecodeError as error:
         raise HTTPException(status_code=502, detail="模型返回的 JSON 无法解析。") from error
+
+    scope = normalize_analysis_scope(
+        parsed.get("scope") if isinstance(parsed, dict) else None,
+        analysis_goal,
+        reviews,
+    )
+    findings = parse_model_findings(parsed, reviews, method)
+
+    return {
+        "scope": scope,
+        "findings": findings,
+    }
+
+
+def parse_model_findings(
+    parsed: dict[str, object] | str,
+    reviews: list[dict[str, object]],
+    method: str,
+) -> list[dict[str, object]]:
+    if isinstance(parsed, str):
+        try:
+            parsed = json.loads(parsed)
+        except json.JSONDecodeError as error:
+            raise HTTPException(status_code=502, detail="模型返回的 JSON 无法解析。") from error
 
     findings = parsed.get("findings", []) if isinstance(parsed, dict) else []
     if not isinstance(findings, list):
@@ -561,13 +895,18 @@ def enrich_findings_with_evidence(
             for review_id in review_ids
             if review_id in reviews_by_id
         ]
+        conflicting = normalize_conflicting_evidence(
+            finding.get("conflictingEvidence"),
+            reviews_by_id,
+        )
         finding_with_evidence = {
             **finding,
             "reviewIds": [item["reviewId"] for item in evidence],
             "sampleCount": len(evidence),
             "evidence": evidence,
-            "conflictingEvidence": finding.get("conflictingEvidence")
-            or conflicting_evidence(review_ids, reviews_by_id),
+            "conflictingEvidence": conflicting
+            if conflicting
+            else conflicting_evidence(review_ids, reviews_by_id),
         }
         enriched.append(finding_with_evidence)
 
@@ -608,6 +947,27 @@ def conflicting_evidence(
     ]
 
 
+def normalize_conflicting_evidence(
+    conflicting_payload: object,
+    reviews_by_id: dict[str, dict[str, object]],
+) -> list[dict[str, str]]:
+    if not isinstance(conflicting_payload, list):
+        return []
+
+    normalized: list[dict[str, str]] = []
+    for item in conflicting_payload:
+        review_id: str | None = None
+        if isinstance(item, str):
+            review_id = item
+        elif isinstance(item, dict):
+            review_id = str(item.get("reviewId") or item.get("id") or "").strip() or None
+
+        if review_id and review_id in reviews_by_id:
+            normalized.append(review_evidence(reviews_by_id[review_id]))
+
+    return normalized
+
+
 def data_limitations(reviews: list[dict[str, object]]) -> list[str]:
     limitations: list[str] = []
 
@@ -621,18 +981,19 @@ def data_limitations(reviews: list[dict[str, object]]) -> list[str]:
 
 def generate_product_artifacts(
     analysis_goal: str,
+    analysis_scope: dict[str, object],
     findings: list[dict[str, object]],
     reviews: list[dict[str, object]],
 ) -> dict[str, object]:
-    requirements = generate_requirements(findings)
+    requirements = generate_requirements(findings, analysis_scope)
     test_cases = generate_test_cases(requirements)
-    version_plan = generate_version_plan(requirements)
+    version_plan = generate_version_plan(requirements, analysis_scope)
 
     return {
         "findings": findings,
         "requirements": requirements,
         "versionPlan": version_plan,
-        "prd": generate_prd(analysis_goal, requirements, version_plan),
+        "prd": generate_prd(analysis_goal, analysis_scope, requirements, version_plan),
         "testCases": test_cases,
         "dataLimitations": data_limitations(reviews),
         "traceabilityValidation": validate_traceability(
@@ -644,7 +1005,10 @@ def generate_product_artifacts(
     }
 
 
-def generate_requirements(findings: list[dict[str, object]]) -> list[dict[str, object]]:
+def generate_requirements(
+    findings: list[dict[str, object]],
+    analysis_scope: dict[str, object],
+) -> list[dict[str, object]]:
     requirements: list[dict[str, object]] = []
 
     for finding in findings:
@@ -654,10 +1018,14 @@ def generate_requirements(findings: list[dict[str, object]]) -> list[dict[str, o
 
         finding_id = str(finding["id"])
         priority = requirement_priority(finding)
+        assumption = bool(finding.get("confidence") == "低")
         requirements.append(
             {
                 "id": requirement_id_for_finding(finding_id),
-                "title": f"围绕「{trim_sentence(str(finding['title']))}」制定可验证改进。",
+                "title": (
+                    f"围绕「{trim_sentence(str(finding['title']))}」"
+                    f"并聚焦「{trim_sentence(str(analysis_scope['focusSummary']))}」制定可验证改进。"
+                ),
                 "priority": priority,
                 "version": "v1" if priority == "P1" else "v2",
                 "findingIds": [finding_id],
@@ -666,7 +1034,11 @@ def generate_requirements(findings: list[dict[str, object]]) -> list[dict[str, o
                     "仅覆盖当前评论证据直接支持的问题。",
                     "不扩展到评论中未出现的全新业务能力。",
                 ],
-                "assumption": False,
+                "assumption": assumption,
+                "acceptanceCriteria": requirement_acceptance_criteria(
+                    finding,
+                    analysis_scope,
+                ),
             }
         )
 
@@ -683,6 +1055,49 @@ def requirement_priority(finding: dict[str, object]) -> str:
     return "P2"
 
 
+def requirement_acceptance_criteria(
+    finding: dict[str, object],
+    analysis_scope: dict[str, object],
+) -> list[str]:
+    title = trim_sentence(str(finding.get("title") or ""))
+    focus_summary = trim_sentence(str(analysis_scope.get("focusSummary") or ""))
+    review_ids = ", ".join(str(review_id) for review_id in finding.get("reviewIds", []))
+
+    if any(term in title for term in ["订阅", "付费", "价格", "取消"]):
+        return [
+            "用户在付费或订阅确认前能看到价格、包含内容和取消方式。",
+            f"源评论 {review_ids} 中的订阅疑虑被逐条回应。",
+            f"相关改进与当前范围「{focus_summary}」一致。",
+        ]
+
+    if any(term in title for term in ["训练", "锻炼", "课程", "动作"]):
+        return [
+            "用户能在开始训练前看懂当前课程或动作会如何执行。",
+            f"源评论 {review_ids} 中关于训练可用性的疑问被直接解决。",
+            f"改进只覆盖当前范围「{focus_summary}」中的训练体验问题。",
+        ]
+
+    if any(term in title for term in ["版本", "更新", "回归"]):
+        return [
+            "问题能在指定版本范围内复现并被修复说明。",
+            f"源评论 {review_ids} 中提到的版本差异可以被追踪。",
+            f"改进与当前范围「{focus_summary}」中的版本差异信号一致。",
+        ]
+
+    if any(term in title for term in ["低评分", "差评", "一星", "二星"]):
+        return [
+            "低评分用户指出的问题在交互或文案中有明确回应。",
+            f"源评论 {review_ids} 中的负面反馈被逐条覆盖。",
+            f"改进与当前范围「{focus_summary}」中的低评分信号一致。",
+        ]
+
+    return [
+        f"与「{title}」相关的用户问题在产品中有明确回应。",
+        f"源评论 {review_ids} 的关键疑问可被产品改进直接解释。",
+        f"改进范围与当前分析范围「{focus_summary}」保持一致。",
+    ]
+
+
 def requirement_id_for_finding(finding_id: str) -> str:
     if finding_id.startswith("finding-"):
         return f"requirement-{finding_id.removeprefix('finding-')}"
@@ -696,6 +1111,7 @@ def trim_sentence(value: str) -> str:
 
 def generate_version_plan(
     requirements: list[dict[str, object]],
+    analysis_scope: dict[str, object],
 ) -> dict[str, list[dict[str, object]]]:
     versions: list[dict[str, object]] = []
     first_version_requirements = [
@@ -710,7 +1126,7 @@ def generate_version_plan(
             version_plan_item(
                 "v1",
                 "版本 1：证据支撑的核心改进",
-                "优先交付有明确评论证据和较高样本支撑的问题。",
+                f"优先交付与「{trim_sentence(str(analysis_scope['focusSummary']))}」直接相关且有明确评论证据的问题。",
                 first_version_requirements,
             )
         )
@@ -720,7 +1136,7 @@ def generate_version_plan(
             version_plan_item(
                 "v2",
                 "版本 2：补充验证后的增强项",
-                "处理样本较少或置信度较弱、需要继续观察的问题。",
+                "处理样本较少、置信度较弱或需要继续观察的问题。",
                 later_version_requirements,
             )
         )
@@ -753,19 +1169,26 @@ def version_plan_item(
 
 def generate_prd(
     analysis_goal: str,
+    analysis_scope: dict[str, object],
     requirements: list[dict[str, object]],
     version_plan: dict[str, list[dict[str, object]]],
 ) -> dict[str, object]:
     goal = analysis_goal.strip() or "当前分析目标"
+    focus_summary = trim_sentence(str(analysis_scope["focusSummary"]))
+    objective = f"围绕「{goal}」回应已导入评论中的高证据问题。"
+    if focus_summary and focus_summary != goal:
+        objective = f"围绕「{goal}」并聚焦「{focus_summary}」回应已导入评论中的高证据问题。"
 
     return {
         "title": "ReviewTrace 产品需求文档草案",
-        "objective": f"围绕「{goal}」回应已导入评论中的高证据问题。",
+        "objective": objective,
+        "scopeSummary": analysis_scope,
         "versions": version_plan["versions"],
         "requirements": requirements,
         "successMetrics": [
             "每条需求都能追溯到至少一条原始评论。",
             "版本范围只包含当前证据支持的问题。",
+            "分析范围、证据信号和不确定性都被显式记录。",
         ],
         "assumptions": [
             requirement
@@ -773,6 +1196,149 @@ def generate_prd(
             if bool(requirement.get("assumption"))
         ],
     }
+
+
+def build_stage_reports(
+    raw_reviews: list[dict[str, object]],
+    reviews: list[dict[str, object]],
+    scope_reviews: list[dict[str, object]],
+    cleaning_summary: dict[str, object],
+    analysis_summary: dict[str, object],
+    analysis_scope: dict[str, object],
+    findings: list[dict[str, object]],
+    requirements: list[dict[str, object]],
+    version_plan: dict[str, object],
+    prd: dict[str, object],
+    test_cases: list[dict[str, object]],
+    traceability_validation: dict[str, object],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "name": "scope",
+            "status": STAGE_STATUS_COMPLETE,
+            "summary": str(analysis_scope["focusSummary"]),
+            "details": [
+                f"用户目标：{analysis_scope['requestedGoal']}",
+                *[f"聚焦：{item}" for item in analysis_scope["focusAreas"]],
+                *[f"信号：{item}" for item in analysis_scope["dataSignals"]],
+                f"范围样本：{len(scope_reviews)} 条（清洗后共 {len(reviews)} 条）",
+                *[
+                    f"范围评论：{review_id}"
+                    for review_id in analysis_scope["scopeReviewIds"][:5]
+                ],
+            ],
+            "revisions": [
+                *[f"约束：{item}" for item in analysis_scope["constraints"]],
+                *[f"不确定性：{item}" for item in analysis_scope["uncertaintyNotes"]],
+            ],
+            "errors": [],
+        },
+        {
+            "name": "reviews",
+            "status": STAGE_STATUS_COMPLETE,
+            "summary": f"收集到 {len(raw_reviews)} 条原始评论，清洗后保留 {len(reviews)} 条。",
+            "details": [
+                f"评分统计：{render_rating_summary(reviews)}",
+                f"原始评论数：{len(raw_reviews)}",
+                f"保留评论数：{len(reviews)}",
+            ],
+            "revisions": [],
+            "errors": [],
+        },
+        {
+            "name": "cleaning",
+            "status": STAGE_STATUS_COMPLETE,
+            "summary": (
+                f"去重 {cleaning_summary['duplicateCount']} 条，"
+                f"移除空评论 {cleaning_summary['discardedEmptyCount']} 条。"
+            ),
+            "details": [
+                f"输入：{cleaning_summary['inputCount']} 条",
+                f"保留：{cleaning_summary['retainedCount']} 条",
+            ],
+            "revisions": [
+                note
+                for note in [
+                    "已将标题和正文都为空的评论从分析集移除。",
+                    "已按标题与正文归一化指纹去重。",
+                ]
+                if cleaning_summary["duplicateCount"] or cleaning_summary["discardedEmptyCount"]
+            ],
+            "errors": [],
+        },
+        {
+            "name": "analysis",
+            "status": STAGE_STATUS_COMPLETE,
+            "summary": (
+                f"{analysis_summary['provider']} / {analysis_summary['model']} 生成 {len(findings)} 个发现。"
+            ),
+            "details": [
+                "模型驱动" if analysis_summary["modelDriven"] else "确定性兜底",
+                *[f"发现：{finding['title']}" for finding in findings[:3]],
+            ],
+            "revisions": [
+                "模型输出已按 reviewId 重新校验并剔除无效引用。",
+                "冲突证据已按有效评论重新归集。",
+            ],
+            "errors": [],
+        },
+        {
+            "name": "prd",
+            "status": STAGE_STATUS_COMPLETE,
+            "summary": f"生成 {len(requirements)} 条需求，拆分为 {len(version_plan['versions'])} 个版本。",
+            "details": [
+                f"PRD 目标：{prd['objective']}",
+                f"假设数量：{len(prd['assumptions'])}",
+            ],
+            "revisions": [
+                *[f"版本：{version['name']}" for version in version_plan["versions"]],
+            ],
+            "errors": [],
+        },
+        {
+            "name": "tests",
+            "status": STAGE_STATUS_COMPLETE,
+            "summary": f"生成 {len(test_cases)} 个 QA 测试用例。",
+            "details": [
+                *[f"测试：{test_case['title']}" for test_case in test_cases[:3]],
+            ],
+            "revisions": [
+                "只为非假设需求生成测试用例。",
+                "测试步骤直接引用源评论编号与需求边界。",
+            ],
+            "errors": [],
+        },
+        {
+            "name": "validation",
+            "status": STAGE_STATUS_COMPLETE,
+            "summary": (
+                "追溯校验通过"
+                if traceability_validation["status"] == "passed"
+                else "追溯校验未通过"
+            ),
+            "details": [
+                f"未通过发现：{len(traceability_validation['unsupportedFindingIds'])}",
+                f"未通过需求：{len(traceability_validation['unsupportedRequirementIds'])}",
+                f"未通过测试：{len(traceability_validation['unsupportedTestCaseIds'])}",
+            ],
+            "revisions": [
+                "所有保留的结论都已绑定到原始评论或被标记为假设。",
+            ],
+            "errors": [
+                *traceability_validation["unsupportedFindingIds"],
+                *traceability_validation["unsupportedRequirementIds"],
+                *traceability_validation["unsupportedTestCaseIds"],
+            ],
+        },
+    ]
+
+
+def render_rating_summary(reviews: list[dict[str, object]]) -> str:
+    ratings = Counter(str(review["rating"]) for review in reviews if int(review["rating"]) > 0)
+    if not ratings:
+        return "无有效评分"
+
+    return "，".join(f"{rating} 星 {count} 条" for rating, count in sorted(ratings.items()))
 
 
 def generate_test_cases(requirements: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -785,10 +1351,11 @@ def generate_test_cases(requirements: list[dict[str, object]]) -> list[dict[str,
                 str(review_id) for review_id in requirement["sourceReviewIds"]
             ],
             "steps": test_case_steps(requirement),
+            "verificationPoints": list(requirement.get("acceptanceCriteria", [])),
             "expectedResult": (
                 f"源评论 {', '.join(str(review_id) for review_id in requirement['sourceReviewIds'])} "
-                f"指出的问题被「{trim_sentence(str(requirement['title']))}」直接解决，"
-                "且测试结果能追溯到对应需求。"
+                f"指出的问题能被「{trim_sentence(str(requirement['title']))}」逐条回应，"
+                "且测试结果能追溯到对应需求与验收条件。"
             ),
         }
         for requirement in requirements
@@ -801,10 +1368,14 @@ def test_case_steps(requirement: dict[str, object]) -> list[str]:
         str(review_id) for review_id in requirement["sourceReviewIds"]
     )
     boundaries = "；".join(str(boundary) for boundary in requirement["boundaries"])
+    acceptance_criteria = "；".join(
+        str(item) for item in requirement.get("acceptanceCriteria", [])
+    )
 
     return [
         f"准备覆盖源评论 {source_review_ids} 所描述问题的用户情境。",
         f"执行需求对应流程：{trim_sentence(str(requirement['title']))}。",
+        f"核对验收条件：{acceptance_criteria}",
         f"核对需求边界：{boundaries}",
         f"确认源评论 {source_review_ids} 的问题被直接回应，而不是只完成通用功能检查。",
     ]
@@ -937,13 +1508,13 @@ def load_fixture_reviews() -> list[dict[str, object]]:
 
 def completed_stages() -> list[dict[str, str]]:
     return [
-        {"name": "scope", "status": "complete"},
-        {"name": "reviews", "status": "complete"},
-        {"name": "cleaning", "status": "complete"},
-        {"name": "analysis", "status": "complete"},
-        {"name": "prd", "status": "complete"},
-        {"name": "tests", "status": "complete"},
-        {"name": "validation", "status": "complete"},
+        {"name": "scope", "status": STAGE_STATUS_COMPLETE},
+        {"name": "reviews", "status": STAGE_STATUS_COMPLETE},
+        {"name": "cleaning", "status": STAGE_STATUS_COMPLETE},
+        {"name": "analysis", "status": STAGE_STATUS_COMPLETE},
+        {"name": "prd", "status": STAGE_STATUS_COMPLETE},
+        {"name": "tests", "status": STAGE_STATUS_COMPLETE},
+        {"name": "validation", "status": STAGE_STATUS_COMPLETE},
     ]
 
 

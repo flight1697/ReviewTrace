@@ -24,7 +24,7 @@ describe("ReviewTrace 首页", () => {
     expect(screen.getByRole("button", { name: /导入文件/i })).toBeInTheDocument();
     expect(screen.getByText("范围")).toBeInTheDocument();
     expect(screen.getByText("评论")).toBeInTheDocument();
-    expect(screen.getByText("证据")).toBeInTheDocument();
+    expect(screen.getByText("分类结果")).toBeInTheDocument();
     expect(screen.getByText("产品需求文档")).toBeInTheDocument();
     expect(screen.getByText("测试")).toBeInTheDocument();
   });
@@ -154,6 +154,25 @@ describe("ReviewTrace 首页", () => {
             model: "fixture-model-stub",
             modelDriven: false,
           },
+          analysisScope: {
+            requestedGoal: "关注订阅转化相关投诉",
+            focusSummary: "订阅路径说明",
+            focusAreas: ["订阅路径"],
+            dataSignals: ["低评分评论提到订阅弹窗和价格说明"],
+            constraints: ["只使用当前评论证据"],
+            uncertaintyNotes: ["样本量较小"],
+            scopeReviewIds: ["fixture-review-001"],
+          },
+          stageReports: [
+            {
+              name: "scope",
+              status: "complete",
+              summary: "范围已收敛到订阅路径",
+              details: ["聚焦：订阅路径"],
+              revisions: ["约束：只使用当前评论证据"],
+              errors: [],
+            },
+          ],
           findings: [
             {
               id: "finding-subscription-clarity",
@@ -188,6 +207,10 @@ describe("ReviewTrace 首页", () => {
               sourceReviewIds: ["fixture-review-001"],
               boundaries: ["仅覆盖当前评论证据直接支持的问题。"],
               assumption: false,
+              acceptanceCriteria: [
+                "用户在付费或订阅确认前能看到价格、包含内容和取消方式。",
+                "源评论 fixture-review-001 中的订阅疑虑被逐条回应。",
+              ],
             },
           ],
           versionPlan: {
@@ -223,6 +246,9 @@ describe("ReviewTrace 首页", () => {
               title: "用户在发起购买前可以看到订阅详情。",
               requirementId: "requirement-subscription-preview",
               sourceReviewIds: ["fixture-review-001"],
+              verificationPoints: [
+                "用户在付费或订阅确认前能看到价格、包含内容和取消方式。",
+              ],
               steps: ["打开订阅入口。"],
               expectedResult:
                 "购买前预览能在用户确认前清楚解释订阅内容。",
@@ -242,6 +268,8 @@ describe("ReviewTrace 首页", () => {
     await waitFor(() => {
       expect(screen.getByText("运行编号：live-839285684")).toBeInTheDocument();
     });
+    expect(screen.getByText("订阅路径说明")).toBeInTheDocument();
+    expect(screen.getByText("范围已收敛到订阅路径")).toBeInTheDocument();
     expect(
       screen.getByText((content) =>
         content.includes(
@@ -254,6 +282,17 @@ describe("ReviewTrace 首页", () => {
     expect(
       screen.getByText(/购买前已经看到了价格、包含功能和取消方式/),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "原始审查" }));
+    expect(
+      screen.getByText("还没理解套餐内容，试用就结束了"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "分类结果" }));
+    expect(screen.getByText("订阅路径说明")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("范围评论：fixture-review-001").length,
+    ).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("tab", { name: "产品需求" }));
+    expect(screen.getByText("验收条件")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "版本计划" }));
     expect(screen.getByText("版本 1：证据支撑的核心改进")).toBeInTheDocument();
@@ -329,6 +368,15 @@ describe("ReviewTrace 首页", () => {
             model: "deterministic-import-summary",
             modelDriven: false,
           },
+          analysisScope: {
+            requestedGoal: "关注低评分评论",
+            focusSummary: "低评分反馈",
+            focusAreas: ["低评分反馈"],
+            dataSignals: ["低评分评论集中在训练计划说明"],
+            constraints: ["只使用当前评论证据"],
+            uncertaintyNotes: ["样本量较小"],
+            scopeReviewIds: ["json-001"],
+          },
           findings: [
             {
               id: "finding-imported-feedback",
@@ -356,6 +404,10 @@ describe("ReviewTrace 首页", () => {
               sourceReviewIds: ["json-001"],
               boundaries: ["仅覆盖当前评论证据直接支持的问题。"],
               assumption: false,
+              acceptanceCriteria: [
+                "低评分用户指出的问题在交互或文案中有明确回应。",
+                "源评论 json-001 中的负面反馈被逐条覆盖。",
+              ],
             },
           ],
           versionPlan: {
@@ -390,6 +442,9 @@ describe("ReviewTrace 首页", () => {
               title: "验证：围绕「导入评论中出现了 1 条可分析反馈」制定可验证改进",
               requirementId: "requirement-imported-feedback",
               sourceReviewIds: ["json-001"],
+              verificationPoints: [
+                "低评分用户指出的问题在交互或文案中有明确回应。",
+              ],
               steps: [
                 "准备覆盖源评论 json-001 所描述问题的用户情境。",
                 "执行需求对应流程：围绕「导入评论中出现了 1 条可分析反馈」制定可验证改进。",
@@ -436,6 +491,10 @@ describe("ReviewTrace 首页", () => {
     });
     expect(screen.getByText("导入的 JSON 数据集")).toBeInTheDocument();
     expect(screen.getByText("训练计划太突然")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "原始审查" }));
+    expect(screen.getByText("训练计划太突然")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "分类结果" }));
+    expect(screen.getAllByText("低评分反馈").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("tab", { name: "版本计划" }));
     expect(screen.getByText("版本 2：补充验证后的增强项")).toBeInTheDocument();

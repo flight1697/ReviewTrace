@@ -23,6 +23,7 @@ import {
   readFileText,
   useWorkflowRun,
   visibleWorkflowStages,
+  type AnalysisScope,
   type Finding,
   useModelStatus,
   type WorkflowRun,
@@ -30,7 +31,9 @@ import {
 
 type SourceMode = "live" | "fixture" | "import";
 type ArtifactTab =
+  | "rawReviews"
   | "reviews"
+  | "analysis"
   | "requirements"
   | "versionPlan"
   | "prd"
@@ -60,7 +63,9 @@ const sourceOptions: {
 ];
 
 const artifactTabs: { id: ArtifactTab; label: string }[] = [
-  { id: "reviews", label: "评论证据" },
+  { id: "rawReviews", label: "原始审查" },
+  { id: "reviews", label: "清理后评论" },
+  { id: "analysis", label: "分类结果" },
   { id: "requirements", label: "产品需求" },
   { id: "versionPlan", label: "版本计划" },
   { id: "prd", label: "PRD 草案" },
@@ -253,6 +258,53 @@ export default function Home() {
           ))}
         </section>
 
+        {run?.stageReports?.length ? (
+          <section className="progress-panel" aria-label="阶段小结">
+            <div className="section-heading">
+              <div>
+                <p className="kicker">阶段小结</p>
+                <h3>每一步都保留了可查看的中间结果与修订记录</h3>
+              </div>
+            </div>
+            <div className="report-grid">
+              {run.stageReports.map((report) => (
+                <article className="report-card" key={report.name}>
+                  <div className="card-topline">
+                    <strong>{stageReportLabel(report.name)}</strong>
+                    <span className="pill muted">
+                      {stageReportStatusLabel(report.status)}
+                    </span>
+                  </div>
+                  <p className="report-summary">{report.summary}</p>
+                  {report.details.length ? (
+                    <ul>
+                      {report.details.map((detail) => (
+                        <li key={detail}>{detail}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {report.revisions.length ? (
+                    <div className="report-block">
+                      <strong>修订</strong>
+                      {report.revisions.map((revision) => (
+                        <p key={revision}>{revision}</p>
+                      ))}
+                    </div>
+                  ) : null}
+                  {report.errors.length ? (
+                    <div className="report-block error">
+                      <strong>错误</strong>
+                      {report.errors.map((errorItem) => (
+                        <p key={errorItem}>{errorItem}</p>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         {error ? (
           <section className="notice error" role="alert">
             <AlertTriangle size={18} aria-hidden="true" />
@@ -330,7 +382,7 @@ function WorkflowDashboard({
   const summaryCards = [
     {
       label: "原始评论",
-      value: run.cleaningSummary.inputCount,
+      value: run.rawReviews.length,
       hint: `保留 ${run.cleaningSummary.retainedCount} 条`,
     },
     {
@@ -359,6 +411,7 @@ function WorkflowDashboard({
       hint: run.source.label,
     },
   ];
+  const scopeSummary = scopeSummaryForRun(run);
 
   return (
     <section className="dashboard" aria-label="分析结果">
@@ -387,6 +440,46 @@ function WorkflowDashboard({
           </div>
         ))}
       </dl>
+
+      <section className="scope-panel" aria-label="分析范围">
+        <div className="section-heading">
+          <div>
+            <p className="kicker">分析范围</p>
+            <h3>系统已根据目标和可用评论收敛当前关注点</h3>
+          </div>
+        </div>
+        <article className="compact-card scope-card">
+          <h4>{scopeSummary.focusSummary}</h4>
+          <p>用户目标：{scopeSummary.requestedGoal}</p>
+          <p>
+            范围评论：{(scopeSummary.scopeReviewIds ?? []).join(", ") || "全部保留评论"}
+          </p>
+          <div className="chip-row" aria-label="分析主题">
+            {scopeSummary.focusAreas.map((item) => (
+              <span className="pill" key={item}>
+                {item}
+              </span>
+            ))}
+          </div>
+          <div className="scope-columns">
+            <div>
+              <strong>证据信号</strong>
+              {scopeSummary.dataSignals.map((signal) => (
+                <p key={signal}>{signal}</p>
+              ))}
+            </div>
+            <div>
+              <strong>约束与不确定性</strong>
+              {scopeSummary.constraints.map((constraint) => (
+                <p key={constraint}>{constraint}</p>
+              ))}
+              {scopeSummary.uncertaintyNotes.map((note) => (
+                <p key={note}>{note}</p>
+              ))}
+            </div>
+          </div>
+        </article>
+      </section>
 
       <section className="insight-panel" aria-label="核心洞察">
         <div className="insight-header">
@@ -461,9 +554,36 @@ function FindingCard({ finding }: { finding: Finding }) {
 }
 
 function renderArtifactTab(tab: ArtifactTab, run: WorkflowRun) {
+  if (tab === "rawReviews") {
+    return (
+      <div className="artifact-list">
+        {run.rawReviews.map((review) => (
+          <article className="compact-card" key={review.id}>
+            <div>
+              <span className="pill">{review.rating} 星</span>
+              <h4>{review.title}</h4>
+            </div>
+            <p>{review.body}</p>
+            <small>{review.id}</small>
+          </article>
+        ))}
+      </div>
+    );
+  }
+
   if (tab === "reviews") {
     return (
       <div className="artifact-list">
+        <article className="compact-card">
+          <h4>清理后的评论集</h4>
+          <p>
+            已去重并移除空评论，共保留 {run.reviews.length} 条，可用于后续发现与追溯。
+          </p>
+          <small>
+            去重 {run.cleaningSummary.duplicateCount} 条 · 移除空评论{" "}
+            {run.cleaningSummary.discardedEmptyCount} 条
+          </small>
+        </article>
         {run.reviews.map((review) => (
           <article className="compact-card" key={review.id}>
             <div>
@@ -472,6 +592,48 @@ function renderArtifactTab(tab: ArtifactTab, run: WorkflowRun) {
             </div>
             <p>{review.body}</p>
             <small>{review.id}</small>
+          </article>
+        ))}
+      </div>
+    );
+  }
+
+  if (tab === "analysis") {
+    const scopeSummary = scopeSummaryForRun(run);
+
+    return (
+      <div className="artifact-list">
+        <article className="compact-card">
+          <div className="card-topline">
+            <Sparkles size={18} aria-hidden="true" />
+            <span>
+              {run.analysisSummary.provider} / {run.analysisSummary.model}
+            </span>
+          </div>
+          <h4>
+            {run.analysisSummary.modelDriven ? "模型驱动分类" : "确定性兜底分类"}
+          </h4>
+          <p>分类范围：{scopeSummary.focusSummary}</p>
+          <p>
+            范围评论：{(scopeSummary.scopeReviewIds ?? []).join(", ") || "全部保留评论"}
+          </p>
+          <div className="chip-row">
+            {scopeSummary.focusAreas.map((item) => (
+              <span className="pill" key={item}>
+                {item}
+              </span>
+            ))}
+          </div>
+        </article>
+        {run.findings.map((finding) => (
+          <article className="compact-card" key={finding.id}>
+            <div className="card-topline">
+              <strong>{finding.title}</strong>
+              <span className="pill muted">{finding.confidence}</span>
+            </div>
+            <p>样本 {finding.sampleCount} 条 · 方法：{finding.method}</p>
+            <p>证据：{finding.reviewIds.join(", ")}</p>
+            <p>冲突证据：{finding.conflictingEvidence.length}</p>
           </article>
         ))}
       </div>
@@ -490,6 +652,12 @@ function renderArtifactTab(tab: ArtifactTab, run: WorkflowRun) {
             <h4>{requirement.title}</h4>
             <p>来源评论：{requirement.sourceReviewIds.join(", ")}</p>
             <p>边界：{requirement.boundaries.join("；")}</p>
+            <div className="report-block">
+              <strong>验收条件</strong>
+              {(requirement.acceptanceCriteria ?? []).map((criterion) => (
+                <p key={criterion}>{criterion}</p>
+              ))}
+            </div>
           </article>
         ))}
       </div>
@@ -511,17 +679,61 @@ function renderArtifactTab(tab: ArtifactTab, run: WorkflowRun) {
   }
 
   if (tab === "prd") {
+    const scopeSummary = scopeSummaryForRun(run);
+
     return (
-      <article className="compact-card">
-        <div className="card-topline">
-          <FileText size={18} aria-hidden="true" />
-          <span>{run.prd.title}</span>
-        </div>
-        <h4>{run.prd.objective}</h4>
-        {run.prd.successMetrics.map((metric) => (
-          <p key={metric}>成功指标：{metric}</p>
-        ))}
-      </article>
+      <div className="artifact-list">
+        <article className="compact-card">
+          <div className="card-topline">
+            <FileText size={18} aria-hidden="true" />
+            <span>{run.prd.title}</span>
+          </div>
+          <h4>{run.prd.objective}</h4>
+          <p>范围：{scopeSummary.focusSummary}</p>
+          <div className="chip-row">
+            {scopeSummary.focusAreas.map((item) => (
+              <span className="pill" key={item}>
+                {item}
+              </span>
+            ))}
+          </div>
+          {scopeSummary.constraints.map((item) => (
+            <p key={item}>约束：{item}</p>
+          ))}
+          {scopeSummary.uncertaintyNotes.map((item) => (
+            <p key={item}>不确定性：{item}</p>
+          ))}
+        </article>
+        <article className="compact-card">
+          <h4>版本与需求</h4>
+          {run.prd.versions.map((version) => (
+            <p key={version.id}>
+              {version.name}：{version.goal}
+            </p>
+          ))}
+          {run.prd.requirements.map((requirement) => (
+            <p key={requirement.id}>
+              {requirement.priority} · {requirement.title}
+            </p>
+          ))}
+        </article>
+        <article className="compact-card">
+          <h4>成功指标与假设</h4>
+          {run.prd.successMetrics.map((metric) => (
+            <p key={metric}>成功指标：{metric}</p>
+          ))}
+          {run.prd.assumptions.length ? (
+            <>
+              <strong>假设</strong>
+              {run.prd.assumptions.map((assumption) => (
+                <p key={assumption.id}>{assumption.title}</p>
+              ))}
+            </>
+          ) : (
+            <p>当前没有需要单独标记的假设。</p>
+          )}
+        </article>
+      </div>
     );
   }
 
@@ -533,6 +745,14 @@ function renderArtifactTab(tab: ArtifactTab, run: WorkflowRun) {
             <h4>{testCase.title}</h4>
             <p>需求：{testCase.requirementId}</p>
             <p>来源评论：{testCase.sourceReviewIds.join(", ")}</p>
+            {(testCase.verificationPoints ?? []).length ? (
+              <div className="report-block">
+                <strong>验证点</strong>
+                {(testCase.verificationPoints ?? []).map((point) => (
+                  <p key={point}>{point}</p>
+                ))}
+              </div>
+            ) : null}
             <ol>
               {testCase.steps.map((step) => (
                 <li key={step}>{step}</li>
@@ -561,6 +781,47 @@ function renderArtifactTab(tab: ArtifactTab, run: WorkflowRun) {
       </article>
     </div>
   );
+}
+
+function scopeSummaryForRun(run: WorkflowRun): AnalysisScope {
+  return (
+    run.analysisScope ??
+    run.prd.scopeSummary ?? {
+      requestedGoal: run.scope.analysisGoal || "当前分析目标",
+      focusSummary: run.scope.analysisGoal || "当前分析目标",
+      focusAreas: ["综合用户反馈"],
+      dataSignals: ["等待后端返回结构化分析范围。"],
+      constraints: ["只使用当前评论证据。"],
+      uncertaintyNotes: [],
+      scopeReviewIds: [],
+    }
+  );
+}
+
+function stageReportLabel(name: string) {
+  const labels: Record<string, string> = {
+    analysis: "分类结果",
+    cleaning: "清洗",
+    prd: "产品需求文档",
+    rawReviews: "原始审查",
+    reviews: "评论收集",
+    scope: "范围",
+    tests: "测试",
+    validation: "校验",
+  };
+
+  return labels[name] ?? name;
+}
+
+function stageReportStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    complete: "已完成",
+    failed: "失败",
+    pending: "等待中",
+    running: "运行中",
+  };
+
+  return labels[status] ?? status;
 }
 
 function EmptyWorkbench() {

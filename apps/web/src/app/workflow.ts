@@ -13,14 +13,14 @@ export const initialStages = [
   ["范围", "等待中"],
   ["评论", "等待中"],
   ["清洗", "等待中"],
-  ["证据", "等待中"],
+  ["分类结果", "等待中"],
   ["产品需求文档", "等待中"],
   ["测试", "等待中"],
   ["校验", "等待中"],
 ] as const;
 
 const stageLabels: Record<string, string> = {
-  analysis: "证据",
+  analysis: "分类结果",
   cleaning: "清洗",
   prd: "产品需求文档",
   reviews: "评论",
@@ -54,6 +54,7 @@ export type Finding = {
   reviewIds: string[];
   sampleCount: number;
   confidence: string;
+  method: string;
   evidence: {
     reviewId: string;
     excerpt: string;
@@ -62,6 +63,16 @@ export type Finding = {
     reviewId: string;
     excerpt: string;
   }[];
+};
+
+export type AnalysisScope = {
+  requestedGoal: string;
+  focusSummary: string;
+  focusAreas: string[];
+  dataSignals: string[];
+  constraints: string[];
+  uncertaintyNotes: string[];
+  scopeReviewIds?: string[];
 };
 
 export type Requirement = {
@@ -73,6 +84,7 @@ export type Requirement = {
   sourceReviewIds: string[];
   boundaries: string[];
   assumption: boolean;
+  acceptanceCriteria?: string[];
 };
 
 export type VersionPlan = {
@@ -88,6 +100,7 @@ export type VersionPlan = {
 export type PrdDraft = {
   title: string;
   objective: string;
+  scopeSummary: AnalysisScope;
   versions: VersionPlan["versions"];
   requirements: Requirement[];
   successMetrics: string[];
@@ -101,6 +114,16 @@ export type TestCase = {
   sourceReviewIds: string[];
   steps: string[];
   expectedResult: string;
+  verificationPoints?: string[];
+};
+
+export type StageReport = {
+  name: string;
+  status: string;
+  summary: string;
+  details: string[];
+  revisions: string[];
+  errors: string[];
 };
 
 export type WorkflowRun = {
@@ -132,6 +155,8 @@ export type WorkflowRun = {
     model: string;
     modelDriven: boolean;
   };
+  analysisScope?: AnalysisScope;
+  stageReports?: StageReport[];
   findings: Finding[];
   requirements: Requirement[];
   versionPlan: VersionPlan;
