@@ -138,7 +138,7 @@ export const demoStages = [
   { id: "scope", label: "1 范围", status: "complete", method: "规则", summary: "收敛到订阅转化、训练可用性与取消路径。", input: "108 条评论", output: "3 个重点范围", badge: "2 个警告", duration: "12.4s", tokens: "0", cost: "$0.00" },
   { id: "collect", label: "2 收集", status: "complete", method: "工具", summary: "抓取受限时透明降级到缓存样本与导入数据。", input: "1,248 条记录", output: "824 条实时 + 424 条缓存", badge: "已限流", duration: "31.8s", tokens: "0", cost: "$0.00" },
   { id: "clean", label: "3 清洗", status: "complete", method: "确定性", summary: "去空白、去重复、字段归一化。", input: "1,248 条原始", output: "1,182 条清洗后", badge: "移除 66 条", duration: "0.8s", tokens: "0", cost: "$0.00" },
-  { id: "analyze", label: "4 分析", status: "running", method: "模型生成", summary: "聚焦付费说明与使用阻力的主题聚合正在生成。", input: "1,182 条清洗后", output: "6 个主题", badge: "46%", duration: "46%", tokens: "2.4k", cost: "$0.18" },
+  { id: "analyze", label: "4 分析", status: "pending", method: "模型生成", summary: "点击开始分析后运行主题聚合。", input: "1,182 条清洗后", output: "待生成", badge: "等待启动", duration: "—", tokens: "—", cost: "—" },
   { id: "evidence", label: "5 证据", status: "pending", method: "确定性", summary: "证据覆盖和冲突证据待汇总。", input: "6 个主题", output: "5 个发现", badge: "等待中", duration: "—", tokens: "—", cost: "—" },
   { id: "prd", label: "6 PRD", status: "pending", method: "模型生成", summary: "将高置信发现转成需求草案。", input: "5 个发现", output: "4 条需求", badge: "等待中", duration: "—", tokens: "—", cost: "—" },
   { id: "tests", label: "7 测试用例", status: "pending", method: "确定性", summary: "依据需求与证据生成测试用例。", input: "4 条需求", output: "28 个用例", badge: "等待中", duration: "—", tokens: "—", cost: "—" },

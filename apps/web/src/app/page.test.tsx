@@ -65,6 +65,12 @@ describe("ReviewTrace 工作台", () => {
     expect(screen.getByRole("button", { name: /开始分析/ })).toBeInTheDocument();
   });
 
+  it("未启动真实运行时不会显示固定的实时百分比", () => {
+    render(<Home />);
+
+    expect(screen.queryByText("46%")).not.toBeInTheDocument();
+  });
+
   it("切换到 Reviews 与 Findings 页面后仍然能看见核心数据", () => {
     render(<Home />);
 

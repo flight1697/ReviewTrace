@@ -550,8 +550,8 @@ export default function ReviewTraceWorkbench() {
 
   function renderRunWorkspace() {
     const progressCopy = run
-      ? "4 of 8 stages complete · 02:18 elapsed. The flow stays honest about limits, retries, and what still needs evidence."
-      : "演示工作台 · 展示 8 个阶段中的 4 个。开始分析后即可查看实时运行与证据。";
+      ? "8 个阶段已完成 4 个 · 已用时 02:18。流程会如实展示限制、重试和仍需证据的内容。"
+      : "演示工作台 · 当前未启动真实运行。点击开始分析后将显示实时阶段状态与证据。";
 
     return (
       <div className="rt-page">
