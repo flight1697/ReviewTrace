@@ -1,9 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from reviewtrace_api.config import load_local_environment
 from reviewtrace_api.workflow import WorkflowRunRequest
 from reviewtrace_api.workflow import WorkflowRunner
 
+
+load_local_environment()
 
 app = FastAPI(title="ReviewTrace API")
 workflow_runner = WorkflowRunner()

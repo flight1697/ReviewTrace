@@ -327,7 +327,7 @@ def analyze_reviews(
     analysis_goal: str,
 ) -> dict[str, object]:
     provider = os.getenv("MODEL_PROVIDER", "stub").lower()
-    model = os.getenv("MODEL_NAME", "gpt-5.6-sol")
+    model = configured_model_name(provider)
 
     if provider == "openai" and os.getenv("OPENAI_API_KEY"):
         prompt = build_review_analysis_prompt(reviews, analysis_goal)
@@ -349,7 +349,37 @@ def analyze_reviews(
             "findings": findings,
         }
 
+    if provider == "deepseek" and os.getenv("DEEPSEEK_API_KEY"):
+        prompt = build_review_analysis_prompt(reviews, analysis_goal)
+        try:
+            model_output = call_deepseek_chat_api(prompt, model)
+        except Exception as error:
+            raise HTTPException(
+                status_code=502,
+                detail="DeepSeek 模型服务不可用，请检查 API key、网络或改用确定性兜底。",
+            ) from error
+        findings = parse_model_findings(model_output, reviews, f"deepseek:{model}")
+
+        return {
+            "summary": {
+                "provider": "deepseek",
+                "model": model,
+                "modelDriven": True,
+            },
+            "findings": findings,
+        }
+
     return build_stub_analysis(reviews)
+
+
+def configured_model_name(provider: str) -> str:
+    if os.getenv("MODEL_NAME"):
+        return str(os.getenv("MODEL_NAME"))
+
+    if provider == "deepseek":
+        return "deepseek-v4-flash"
+
+    return "gpt-5.6-sol"
 
 
 def build_stub_analysis(reviews: list[dict[str, object]]) -> dict[str, object]:
@@ -413,6 +443,31 @@ def call_openai_responses_api(prompt: str, model: str) -> str:
         input=prompt,
     )
     return response.output_text
+
+
+def call_deepseek_chat_api(prompt: str, model: str) -> str:
+    from openai import OpenAI
+
+    client = OpenAI(
+        api_key=os.getenv("DEEPSEEK_API_KEY"),
+        base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+    )
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {
+                "role": "system",
+                "content": "你是严谨的 App Store 评论分析助手，只返回合法 JSON。",
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+        response_format={"type": "json_object"},
+    )
+
+    return response.choices[0].message.content or ""
 
 
 def parse_model_findings(

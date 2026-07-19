@@ -502,6 +502,109 @@ def test_openai_provider_can_drive_semantic_findings(monkeypatch):
     ]
 
 
+def test_deepseek_provider_can_drive_semantic_findings(monkeypatch):
+    client = TestClient(app)
+
+    monkeypatch.setenv("MODEL_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setenv("MODEL_NAME", "deepseek-v4-flash")
+
+    def fake_deepseek_response(prompt: str, model: str) -> str:
+        assert "json-001" in prompt
+        assert model == "deepseek-v4-flash"
+        return """
+        {
+          "findings": [
+            {
+              "id": "finding-subscription-copy",
+              "title": "订阅说明需要在购买前更清楚地解释。",
+              "reviewIds": ["json-001"],
+              "sampleCount": 1,
+              "confidence": "高",
+              "conflictingEvidence": []
+            }
+          ]
+        }
+        """
+
+    monkeypatch.setattr(workflow, "call_deepseek_chat_api", fake_deepseek_response)
+
+    response = client.post(
+        "/workflow/runs",
+        json={
+            "appStoreUrl": "https://apps.apple.com/us/app/example/id123456789",
+            "analysisGoal": "关注订阅说明",
+            "sourceMode": "import",
+            "datasetFormat": "json",
+            "datasetText": """
+            {
+              "reviews": [
+                {
+                  "id": "json-001",
+                  "rating": 2,
+                  "title": "订阅说明不清楚",
+                  "body": "购买前没有看懂价格和取消方式。"
+                }
+              ]
+            }
+            """,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["analysisSummary"] == {
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash",
+        "modelDriven": True,
+    }
+    assert body["findings"][0]["method"] == "deepseek:deepseek-v4-flash"
+    assert body["findings"][0]["reviewIds"] == ["json-001"]
+
+
+def test_deepseek_provider_without_api_key_falls_back_to_stub(monkeypatch):
+    client = TestClient(app)
+
+    monkeypatch.setenv("MODEL_PROVIDER", "deepseek")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("MODEL_NAME", raising=False)
+
+    def unexpected_deepseek_call(prompt: str, model: str) -> str:
+        raise AssertionError("缺少 DEEPSEEK_API_KEY 时不应调用 DeepSeek API")
+
+    monkeypatch.setattr(workflow, "call_deepseek_chat_api", unexpected_deepseek_call)
+
+    response = client.post(
+        "/workflow/runs",
+        json={
+            "appStoreUrl": "https://apps.apple.com/us/app/example/id123456789",
+            "analysisGoal": "关注订阅说明",
+            "sourceMode": "import",
+            "datasetFormat": "json",
+            "datasetText": """
+            {
+              "reviews": [
+                {
+                  "id": "json-001",
+                  "rating": 2,
+                  "title": "订阅说明不清楚",
+                  "body": "购买前没有看懂价格和取消方式。"
+                }
+              ]
+            }
+            """,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["analysisSummary"] == {
+        "provider": "stub",
+        "model": "deterministic-import-summary",
+        "modelDriven": False,
+    }
+
+
 def test_openai_provider_failure_returns_recoverable_error(monkeypatch):
     client = TestClient(app)
 
@@ -537,6 +640,45 @@ def test_openai_provider_failure_returns_recoverable_error(monkeypatch):
 
     assert response.status_code == 502
     assert response.json()["detail"] == "模型服务不可用，请检查 API key、网络或改用确定性兜底。"
+
+
+def test_deepseek_provider_failure_returns_recoverable_error(monkeypatch):
+    client = TestClient(app)
+
+    monkeypatch.setenv("MODEL_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+
+    def unavailable_model(prompt: str, model: str) -> str:
+        raise RuntimeError("network unavailable")
+
+    monkeypatch.setattr(workflow, "call_deepseek_chat_api", unavailable_model)
+
+    response = client.post(
+        "/workflow/runs",
+        json={
+            "appStoreUrl": "https://apps.apple.com/us/app/example/id123456789",
+            "analysisGoal": "关注订阅说明",
+            "sourceMode": "import",
+            "datasetFormat": "json",
+            "datasetText": """
+            {
+              "reviews": [
+                {
+                  "id": "json-001",
+                  "rating": 2,
+                  "title": "订阅说明不清楚",
+                  "body": "购买前没有看懂价格和取消方式。"
+                }
+              ]
+            }
+            """,
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == (
+        "DeepSeek 模型服务不可用，请检查 API key、网络或改用确定性兜底。"
+    )
 
 
 def test_findings_include_conflicts_data_limits_and_traceability_validation():
