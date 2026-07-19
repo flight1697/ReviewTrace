@@ -51,7 +51,7 @@ https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684
 后端会从 Apple 公开评论 RSS 源读取最新评论：
 
 ```text
-https://itunes.apple.com/us/rss/customerreviews/id=<app_id>/sortBy=mostRecent/json
+https://itunes.apple.com/us/rss/customerreviews/page=2/id=<app_id>/sortBy=mostRecent/json
 ```
 
 已知限制：

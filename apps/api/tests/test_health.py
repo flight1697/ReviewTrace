@@ -1,7 +1,10 @@
 from fastapi.testclient import TestClient
 
-from reviewtrace_api import main
+from reviewtrace_api import workflow
 from reviewtrace_api.main import app
+from reviewtrace_api.workflow import ReviewSourceBatch
+from reviewtrace_api.workflow import WorkflowRunRequest
+from reviewtrace_api.workflow import WorkflowRunner
 
 
 def test_health_check_identifies_reviewtrace_api():
@@ -14,6 +17,65 @@ def test_health_check_identifies_reviewtrace_api():
         "status": "ok",
         "service": "ReviewTrace 后端服务",
     }
+
+
+def test_workflow_runner_interface_returns_complete_fixture_run():
+    runner = WorkflowRunner()
+
+    body = runner.run(
+        WorkflowRunRequest(
+            appStoreUrl="https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684",
+            analysisGoal="关注订阅转化相关投诉",
+            sourceMode="fixture",
+        )
+    )
+
+    assert body["runId"] == "fixture-run-001"
+    assert body["findings"][0]["evidence"]
+    assert body["requirements"][0]["sourceReviewIds"] == body["findings"][0]["reviewIds"]
+    assert body["testCases"][0]["requirementId"] == body["requirements"][0]["id"]
+    assert body["traceabilityValidation"]["status"] == "passed"
+
+
+def test_workflow_runner_accepts_substitutable_review_source_adapter():
+    class MemoryReviewSourceAdapter:
+        def collect(self, request: WorkflowRunRequest) -> ReviewSourceBatch:
+            return ReviewSourceBatch(
+                run_id="memory-run-001",
+                source={"mode": "memory", "label": "内存评论数据"},
+                scope={
+                    "appStoreUrl": request.app_store_url,
+                    "analysisGoal": request.analysis_goal,
+                    "storefront": "us",
+                },
+                raw_reviews=[
+                    {
+                        "id": "memory-001",
+                        "rating": 2,
+                        "title": "说明不清楚",
+                        "body": "用户需要更明确的说明。",
+                        "appVersion": "",
+                        "source": "memory",
+                        "rawMetadata": {},
+                    }
+                ],
+                validation_messages=["内存 adapter 已完成。"],
+            )
+
+    runner = WorkflowRunner(source_adapters={"memory": MemoryReviewSourceAdapter()})
+
+    body = runner.run(
+        WorkflowRunRequest(
+            appStoreUrl="https://apps.apple.com/us/app/example/id123456789",
+            analysisGoal="关注说明清晰度",
+            sourceMode="memory",
+        )
+    )
+
+    assert body["runId"] == "memory-run-001"
+    assert body["source"]["label"] == "内存评论数据"
+    assert body["reviews"][0]["id"] == "memory-001"
+    assert body["traceabilityValidation"]["status"] == "passed"
 
 
 def test_fixture_workflow_returns_traceable_artifacts():
@@ -95,7 +157,7 @@ def test_live_app_store_reviews_run_through_same_workflow(monkeypatch):
             },
         ]
 
-    monkeypatch.setattr(main, "fetch_app_store_reviews", fake_app_store_reviews)
+    monkeypatch.setattr(workflow, "fetch_app_store_reviews", fake_app_store_reviews)
 
     response = client.post(
         "/workflow/runs",
@@ -132,6 +194,46 @@ def test_live_app_store_flow_requires_us_app_store_link():
 
     assert response.status_code == 400
     assert response.json()["detail"] == "当前仅支持 U.S. App Store 链接。"
+
+
+def test_live_app_store_reviews_use_review_page(monkeypatch):
+    payload = {
+        "feed": {
+            "entry": [
+                {
+                    "author": {"name": {"label": "用户A"}},
+                    "updated": {"label": "2026-07-18T20:45:41-07:00"},
+                    "im:rating": {"label": "5"},
+                    "im:version": {"label": "8.4.27"},
+                    "id": {"label": "review-001"},
+                    "title": {"label": "很好"},
+                    "content": {"label": "内容不错"},
+                }
+            ]
+        }
+    }
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            import json
+
+            return json.dumps(payload).encode("utf-8")
+
+    def fake_urlopen(request, timeout=20):
+        assert "page=2" in request.full_url
+        return FakeResponse()
+
+    monkeypatch.setattr(workflow.urllib.request, "urlopen", fake_urlopen)
+
+    reviews = workflow.fetch_app_store_reviews("839285684", "us")
+
+    assert [review["id"] for review in reviews] == ["review-001"]
 
 
 def test_workflow_rejects_unknown_source_mode():
@@ -349,7 +451,7 @@ def test_openai_provider_can_drive_semantic_findings(monkeypatch):
         }
         """
 
-    monkeypatch.setattr(main, "call_openai_responses_api", fake_openai_response)
+    monkeypatch.setattr(workflow, "call_openai_responses_api", fake_openai_response)
 
     response = client.post(
         "/workflow/runs",
@@ -409,7 +511,7 @@ def test_openai_provider_failure_returns_recoverable_error(monkeypatch):
     def unavailable_model(prompt: str, model: str) -> str:
         raise RuntimeError("network unavailable")
 
-    monkeypatch.setattr(main, "call_openai_responses_api", unavailable_model)
+    monkeypatch.setattr(workflow, "call_openai_responses_api", unavailable_model)
 
     response = client.post(
         "/workflow/runs",
@@ -513,7 +615,7 @@ def test_traceability_validation_flags_unsupported_test_cases(monkeypatch):
             }
         ]
 
-    monkeypatch.setattr(main, "generate_test_cases", unsupported_test_case)
+    monkeypatch.setattr(workflow, "generate_test_cases", unsupported_test_case)
 
     response = client.post(
         "/workflow/runs",

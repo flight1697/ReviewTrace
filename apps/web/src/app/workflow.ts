@@ -1,3 +1,7 @@
+"use client";
+
+import { useState } from "react";
+
 export const defaultAppStoreLink =
   "https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684";
 export const defaultAnalysisGoal = "关注订阅转化相关投诉";
@@ -145,6 +149,44 @@ export type WorkflowRun = {
 
 export type WorkflowRequestBody = Record<string, string>;
 export type WorkflowStatus = "idle" | "running" | "failed";
+
+export function useWorkflowRun() {
+  const [run, setRun] = useState<WorkflowRun | null>(null);
+  const [status, setStatus] = useState<WorkflowStatus>("idle");
+  const [error, setError] = useState("");
+
+  async function requestWorkflow(body: WorkflowRequestBody) {
+    setStatus("running");
+    setError("");
+
+    try {
+      setRun(await requestWorkflowRun(body));
+      setStatus("idle");
+    } catch (caughtError) {
+      setStatus("failed");
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "工作流请求失败",
+      );
+    }
+  }
+
+  function failWorkflow(caughtError: unknown, fallbackMessage: string) {
+    setStatus("failed");
+    setError(
+      caughtError instanceof Error ? caughtError.message : fallbackMessage,
+    );
+  }
+
+  return {
+    error,
+    failWorkflow,
+    requestWorkflow,
+    run,
+    status,
+  };
+}
 
 export async function requestWorkflowRun(
   body: WorkflowRequestBody,

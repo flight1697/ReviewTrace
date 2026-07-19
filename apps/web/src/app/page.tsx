@@ -8,35 +8,14 @@ import {
   defaultAnalysisGoal,
   defaultAppStoreLink,
   readFileText,
-  requestWorkflowRun,
-  type WorkflowRun,
-  type WorkflowStatus,
+  useWorkflowRun,
   visibleWorkflowStages,
 } from "./workflow";
 
 export default function Home() {
   const [appStoreLink, setAppStoreLink] = useState(defaultAppStoreLink);
   const [analysisGoal, setAnalysisGoal] = useState(defaultAnalysisGoal);
-  const [run, setRun] = useState<WorkflowRun | null>(null);
-  const [status, setStatus] = useState<WorkflowStatus>("idle");
-  const [error, setError] = useState("");
-
-  async function requestWorkflow(body: Record<string, string>) {
-    setStatus("running");
-    setError("");
-
-    try {
-      setRun(await requestWorkflowRun(body));
-      setStatus("idle");
-    } catch (caughtError) {
-      setStatus("failed");
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "工作流请求失败",
-      );
-    }
-  }
+  const { error, failWorkflow, requestWorkflow, run, status } = useWorkflowRun();
 
   async function runLiveWorkflow() {
     await requestWorkflow({
@@ -75,10 +54,7 @@ export default function Home() {
         sourceMode: "import",
       });
     } catch (caughtError) {
-      setStatus("failed");
-      setError(
-        caughtError instanceof Error ? caughtError.message : "读取导入文件失败",
-      );
+      failWorkflow(caughtError, "读取导入文件失败");
     }
   }
 
