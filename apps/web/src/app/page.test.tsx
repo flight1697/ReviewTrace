@@ -22,8 +22,13 @@ describe("ReviewTrace 首页", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /缓存示例/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /导入文件/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "执行进度" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("等待启动工作流")).toBeInTheDocument();
+    expect(screen.getByText("状态：待启动")).toBeInTheDocument();
     expect(screen.getByText("范围")).toBeInTheDocument();
-    expect(screen.getByText("评论")).toBeInTheDocument();
+    expect(screen.getAllByText("评论").length).toBeGreaterThan(0);
     expect(screen.getByText("分类结果")).toBeInTheDocument();
     expect(screen.getByText("产品需求文档")).toBeInTheDocument();
     expect(screen.getByText("测试")).toBeInTheDocument();
@@ -399,7 +404,7 @@ describe("ReviewTrace 首页", () => {
       expect(screen.getByText("正在读取评论源。")).toBeInTheDocument();
     });
     expect(
-      screen.getByRole("region", { name: "工作流阶段" }),
+      screen.getByRole("region", { name: "执行进度" }),
     ).toHaveTextContent("运行中");
 
     finishStream?.();
@@ -661,7 +666,7 @@ describe("ReviewTrace 首页", () => {
       ).toBeInTheDocument();
     });
     expect(
-      screen.getByRole("region", { name: "工作流阶段" }),
+      screen.getByRole("region", { name: "执行进度" }),
     ).toHaveTextContent("失败");
     expect(
       screen.getByRole("region", { name: "空状态" }),

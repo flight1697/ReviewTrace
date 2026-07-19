@@ -143,127 +143,178 @@ export default function Home() {
   const visibleStages = visibleWorkflowStages(run, status, progressStages);
   const visibleStageReports = run?.stageReports ?? stageReports;
   const isRunning = status === "running";
+  const hasWorkflowActivity =
+    Boolean(run) || progressStages.length > 0 || status !== "idle";
+  const activeStage = visibleStages.find(
+    ([, stageStatus]) => stageStatus === "运行中",
+  );
+  const failedStage = visibleStages.find(
+    ([, stageStatus]) => stageStatus === "失败",
+  );
+  const completedStages = visibleStages.filter(
+    ([, stageStatus]) => stageStatus === "已完成",
+  );
+  const spotlightStage =
+    activeStage ??
+    failedStage ??
+    completedStages.at(-1) ??
+    (hasWorkflowActivity ? visibleStages[0] : undefined);
+  const progressTitle = isRunning
+    ? "工作流正在流式返回阶段进度"
+    : run
+      ? "工作流已完成，进度可回溯"
+      : status === "failed"
+        ? "工作流已停止，请查看错误信息"
+        : "等待启动工作流";
+  const progressBadgeText = spotlightStage
+    ? `当前：${spotlightStage[0]} · ${spotlightStage[1]}`
+    : "状态：待启动";
 
   return (
-    <main className="shell">
-      <section className="hero" aria-label="ReviewTrace 产品介绍">
-        <div className="eyebrow">
-          <Activity size={18} aria-hidden="true" />
-          评论证据链分析工作台
-        </div>
-        <div className="hero-grid">
-          <div className="hero-copy">
-            <h1>ReviewTrace</h1>
-            <p>
-              从 App Store 评论中提取有证据支撑的产品洞察、需求、版本计划和
-              QA 测试用例。
-            </p>
-            <div className="hero-tags" aria-label="当前能力">
-              <span>评论采集</span>
-              <span>证据发现</span>
-              <span>PRD 草案</span>
-              <span>QA 覆盖</span>
-            </div>
-          </div>
+    <main className="shell shell--dashboard">
+      <span className="ambient-orb ambient-orb-one" aria-hidden="true" />
+      <span className="ambient-orb ambient-orb-two" aria-hidden="true" />
 
+      <section className="hero hero--dashboard" aria-label="ReviewTrace 产品介绍">
+        <div className="hero-copy">
+          <div className="eyebrow">
+            <Activity size={18} aria-hidden="true" />
+            评论证据链分析工作台
+          </div>
+          <h1>ReviewTrace</h1>
+          <p>
+            把 App Store 评论变成结构清晰、可追溯、能直接行动的产品分析报告。
+          </p>
+          <div className="hero-tags" aria-label="当前能力">
+            <span>评论采集</span>
+            <span>证据发现</span>
+            <span>PRD 草案</span>
+            <span>QA 覆盖</span>
+          </div>
+        </div>
+
+        <div className="hero-spotlight">
+          <ModelStatusNotice status={modelStatus ?? null} />
           <div className="hero-metrics" aria-label="工作流能力概览">
-            <MetricCard icon={<Database />} label="数据源" value="3 种" />
-            <MetricCard icon={<Target />} label="追溯链路" value="端到端" />
-            <MetricCard icon={<ClipboardCheck />} label="交付物" value="6 类" />
+            <MetricCard
+              icon={<Database />}
+              label="当前阶段"
+              value={spotlightStage?.[0] ?? "待命"}
+            />
+            <MetricCard
+              icon={<Target />}
+              label="数据源"
+              value={sourceLabel(sourceMode)}
+            />
+            <MetricCard
+              icon={<ClipboardCheck />}
+              label="交付链路"
+              value="PRD → 测试 → 追溯"
+            />
           </div>
         </div>
       </section>
 
-      <section className="workbench" aria-label="ReviewTrace 工作台">
-        <section className="task-card" aria-label="任务配置">
-          <div className="section-heading">
-            <div>
-              <p className="kicker">任务配置</p>
-              <h2>告诉 ReviewTrace 要分析什么</h2>
-            </div>
-            <span className="soft-badge">中文报告优先</span>
+      <section className="control-dock card-surface" aria-label="任务配置">
+        <div className="section-heading">
+          <div>
+            <p className="kicker">任务配置</p>
+            <h2>告诉 ReviewTrace 要分析什么</h2>
+          </div>
+          <span className="soft-badge">中文报告优先</span>
+        </div>
+
+        <form className="task-form task-form--dashboard">
+          <label className="field">
+            <span>App Store 链接</span>
+            <input
+              name="appStoreLink"
+              placeholder="https://apps.apple.com/us/app/.../id839285684"
+              type="url"
+              value={appStoreLink}
+              onChange={(event) => setAppStoreLink(event.target.value)}
+            />
+          </label>
+
+          <label className="field">
+            <span>分析目标</span>
+            <textarea
+              name="analysisGoal"
+              placeholder="例如：关注订阅转化、低评分评论、训练可用性..."
+              value={analysisGoal}
+              onChange={(event) => setAnalysisGoal(event.target.value)}
+            />
+          </label>
+
+          <div className="source-picker source-picker--dashboard" aria-label="数据源选择">
+            {sourceOptions.map((option) => (
+              <button
+                aria-pressed={sourceMode === option.mode}
+                className="source-option"
+                data-selected={sourceMode === option.mode}
+                key={option.mode}
+                onClick={() => setSourceMode(option.mode)}
+                type="button"
+              >
+                <strong>{option.label}</strong>
+                <span>{option.description}</span>
+              </button>
+            ))}
           </div>
 
-          {modelStatus ? <ModelStatusNotice status={modelStatus} /> : null}
-
-          <form className="task-form">
-            <label className="field">
-              <span>App Store 链接</span>
-              <input
-                name="appStoreLink"
-                placeholder="https://apps.apple.com/us/app/.../id839285684"
-                type="url"
-                value={appStoreLink}
-                onChange={(event) => setAppStoreLink(event.target.value)}
-              />
-            </label>
-
-            <label className="field">
-              <span>分析目标</span>
-              <textarea
-                name="analysisGoal"
-                placeholder="例如：关注订阅转化、低评分评论、训练可用性..."
-                value={analysisGoal}
-                onChange={(event) => setAnalysisGoal(event.target.value)}
-              />
-            </label>
-
-            <div className="source-picker" aria-label="数据源选择">
-              {sourceOptions.map((option) => (
-                <button
-                  aria-pressed={sourceMode === option.mode}
-                  className="source-option"
-                  data-selected={sourceMode === option.mode}
-                  key={option.mode}
-                  onClick={() => setSourceMode(option.mode)}
-                  type="button"
-                >
-                  <strong>{option.label}</strong>
-                  <span>{option.description}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="submit-row">
-              {sourceMode === "import" ? (
-                <label className="primary file-trigger">
-                  <Upload size={18} aria-hidden="true" />
-                  {isRunning ? "导入分析中" : "选择文件并生成报告"}
-                  <input
-                    aria-label="导入评论文件"
-                    accept=".json,.csv,application/json,text/csv"
-                    disabled={isRunning}
-                    onChange={importReviews}
-                    type="file"
-                  />
-                </label>
-              ) : (
-                <button
-                  className="primary"
+          <div className="submit-row submit-row--dashboard">
+            {sourceMode === "import" ? (
+              <label className="primary file-trigger">
+                <Upload size={18} aria-hidden="true" />
+                {isRunning ? "导入分析中" : "选择文件并生成报告"}
+                <input
+                  aria-label="导入评论文件"
+                  accept=".json,.csv,application/json,text/csv"
                   disabled={isRunning}
-                  onClick={runConfiguredWorkflow}
-                  type="button"
-                >
-                  {isRunning ? (
-                    <Loader2 className="spin" size={18} aria-hidden="true" />
-                  ) : (
-                    <Play size={18} aria-hidden="true" />
-                  )}
-                  {sourceMode === "fixture" ? "运行缓存示例" : "生成分析报告"}
-                </button>
-              )}
-              <p className="helper-text">
-                在线采集依赖 Apple 公开 RSS；如果返回空数据，可切换缓存示例或导入评论。
-              </p>
-              {sourceMode === "import" ? <ImportSampleDownloads /> : null}
-            </div>
-          </form>
-        </section>
+                  onChange={importReviews}
+                  type="file"
+                />
+              </label>
+            ) : (
+              <button
+                className="primary"
+                disabled={isRunning}
+                onClick={runConfiguredWorkflow}
+                type="button"
+              >
+                {isRunning ? (
+                  <Loader2 className="spin" size={18} aria-hidden="true" />
+                ) : (
+                  <Play size={18} aria-hidden="true" />
+                )}
+                {sourceMode === "fixture" ? "运行缓存示例" : "生成分析报告"}
+              </button>
+            )}
 
-        <section className="timeline-card" aria-label="工作流阶段">
+            <p className="helper-text helper-text--dashboard">
+              在线采集依赖 Apple 公开 RSS；如果返回空数据，可切换缓存示例或导入评论。
+            </p>
+
+            {sourceMode === "import" ? <ImportSampleDownloads /> : null}
+          </div>
+        </form>
+      </section>
+
+      <section className="progress-board card-surface" aria-label="执行进度">
+        <div className="section-heading">
+          <div>
+            <p className="kicker">执行进度</p>
+            <h2>{progressTitle}</h2>
+          </div>
+          <span className="status-badge progress-badge">
+            {progressBadgeText}
+          </span>
+        </div>
+
+        <div className="workflow-rail" role="list" aria-label="工作流阶段">
           {visibleStages.map(([name, stageStatus], index) => (
-            <div className="timeline-step" data-status={stageStatus} key={name}>
-              <span className="timeline-marker">
+            <article className="workflow-step" data-status={stageStatus} key={name} role="listitem">
+              <span className="workflow-marker">
                 {stageStatus === "已完成" ? (
                   <CheckCircle2 size={16} aria-hidden="true" />
                 ) : stageStatus === "运行中" ? (
@@ -278,25 +329,22 @@ export default function Home() {
                 <strong>{name}</strong>
                 <span>{stageStatus}</span>
               </div>
-            </div>
+            </article>
           ))}
-        </section>
+        </div>
 
         {visibleStageReports.length ? (
-          <section className="progress-panel" aria-label="阶段小结">
-            <div className="section-heading">
+          <div className="progress-story">
+            <div className="progress-story__header">
               <div>
                 <p className="kicker">阶段小结</p>
-                <h3>
-                  {isRunning
-                    ? "工作流正在流式返回阶段进度"
-                    : "每一步都保留了可查看的中间结果与修订记录"}
-                </h3>
+                <h3>每一步都保留了可查看的中间结果与修订记录</h3>
               </div>
+              <span className="run-id">{isRunning ? "实时流式更新中" : "完整结果已回放"}</span>
             </div>
-            <div className="report-grid">
+            <div className="report-grid report-grid--story">
               {visibleStageReports.map((report) => (
-                <article className="report-card" key={report.name}>
+                <article className="report-card report-card--story" key={report.name}>
                   <div className="card-topline">
                     <strong>{stageReportLabel(report.name)}</strong>
                     <span className="pill muted">
@@ -330,7 +378,7 @@ export default function Home() {
                 </article>
               ))}
             </div>
-          </section>
+          </div>
         ) : null}
 
         {error ? (
@@ -339,19 +387,19 @@ export default function Home() {
             <span>{error}</span>
           </section>
         ) : null}
-
-        {run ? (
-          <WorkflowDashboard
-            activeTab={activeTab}
-            onChangeTab={setActiveTab}
-            onRunFixture={runFixtureWorkflow}
-            onShowImport={showImportControls}
-            run={run}
-          />
-        ) : (
-          <EmptyWorkbench />
-        )}
       </section>
+
+      {run ? (
+        <WorkflowDashboard
+          activeTab={activeTab}
+          onChangeTab={setActiveTab}
+          onRunFixture={runFixtureWorkflow}
+          onShowImport={showImportControls}
+          run={run}
+        />
+      ) : (
+        <EmptyWorkbench />
+      )}
     </main>
   );
 }
@@ -381,8 +429,20 @@ function ImportSampleDownloads() {
 function ModelStatusNotice({
   status,
 }: {
-  status: NonNullable<ReturnType<typeof useModelStatus>>;
+  status: NonNullable<ReturnType<typeof useModelStatus>> | null;
 }) {
+  if (!status) {
+    return (
+      <div className="model-status fallback" role="status" aria-label="模型配置状态">
+        <div>
+          <strong>正在读取模型配置</strong>
+          <span>稍后会显示 provider、模型名称和可用状态。</span>
+        </div>
+        <span className="model-chip">加载中</span>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`model-status ${status.modelDrivenAvailable ? "ready" : "fallback"}`}
@@ -400,6 +460,18 @@ function ModelStatusNotice({
       </span>
     </div>
   );
+}
+
+function sourceLabel(mode: SourceMode) {
+  if (mode === "live") {
+    return "在线采集";
+  }
+
+  if (mode === "fixture") {
+    return "缓存示例";
+  }
+
+  return "导入文件";
 }
 
 function MetricCard({
@@ -504,33 +576,38 @@ function WorkflowDashboard({
   const scopeSummary = scopeSummaryForRun(run);
 
   return (
-    <section className="dashboard" aria-label="分析结果">
-      <div className="section-heading">
+    <section className="dashboard dashboard--workspace" aria-label="分析工作区">
+      <div className="workspace-banner">
         <div>
           <p className="kicker">分析结果</p>
           <h2>本次运行已生成可追溯交付物</h2>
+          <p className="workspace-banner__text">
+            左侧看结论，中间看证据，右侧看交付物；同一条评论链路从上到下都能回到原始来源。
+          </p>
         </div>
-        <span
-          className={
-            run.traceabilityValidation.status === "passed"
-              ? "status-badge success"
-              : "status-badge warning"
-          }
-        >
-          追溯{run.traceabilityValidation.status === "passed" ? "通过" : "未通过"}
-        </span>
+        <div className="workspace-banner__meta">
+          <span
+            className={
+              run.traceabilityValidation.status === "passed"
+                ? "status-badge success"
+                : "status-badge warning"
+            }
+          >
+            追溯{run.traceabilityValidation.status === "passed" ? "通过" : "未通过"}
+          </span>
+          <span className="run-id">运行编号：{run.runId}</span>
+          {isLiveEmptyRun(run) ? (
+            <LiveEmptyNotice
+              onRunFixture={onRunFixture}
+              onShowImport={onShowImport}
+            />
+          ) : null}
+        </div>
       </div>
 
-      {isLiveEmptyRun(run) ? (
-        <LiveEmptyNotice
-          onRunFixture={onRunFixture}
-          onShowImport={onShowImport}
-        />
-      ) : null}
-
-      <dl className="summary-grid">
+      <dl className="summary-grid summary-grid--dashboard">
         {summaryCards.map((card) => (
-          <div className="summary-card" key={card.label}>
+          <div className="summary-card summary-card--dashboard" key={card.label}>
             <dt>{card.label}</dt>
             <dd>{card.value}</dd>
             <span>{card.hint}</span>
@@ -538,105 +615,142 @@ function WorkflowDashboard({
         ))}
       </dl>
 
-      <section className="scope-panel" aria-label="分析范围">
-        <div className="section-heading">
-          <div>
-            <p className="kicker">分析范围</p>
-            <h3>系统已根据目标和可用评论收敛当前关注点</h3>
+      <div className="workspace-grid">
+        <section className="workspace-column workspace-column--insights" aria-label="核心洞察">
+          <div className="column-heading">
+            <div>
+              <p className="kicker">核心洞察</p>
+              <h3>从评论证据提炼出的主要产品信号</h3>
+            </div>
           </div>
-        </div>
-        <article className="compact-card scope-card">
-          <h4>{scopeSummary.focusSummary}</h4>
-          <p>用户目标：{scopeSummary.requestedGoal}</p>
-          <p>
-            范围评论：{(scopeSummary.scopeReviewIds ?? []).join(", ") || "全部保留评论"}
-          </p>
-          <p>
-            过滤说明：
-            {scopeSummary.selectionSummary ||
-              "系统会根据分析目标、评分、版本和评论内容选择当前分析范围。"}
-          </p>
-          <div className="chip-row" aria-label="分析主题">
-            {scopeSummary.focusAreas.map((item) => (
-              <span className="pill" key={item}>
-                {item}
+
+          <div className="insight-list">
+            {run.findings.length ? (
+              run.findings.map((finding) => (
+                <FindingCard finding={finding} key={finding.id} />
+              ))
+            ) : (
+              <article className="empty-result-card">
+                <AlertTriangle size={18} aria-hidden="true" />
+                <div>
+                  <strong>当前没有生成产品发现</strong>
+                  <p>系统没有足够评论证据，因此没有继续生成需求或 QA 用例。</p>
+                </div>
+              </article>
+            )}
+          </div>
+        </section>
+
+        <section className="workspace-column workspace-column--evidence" aria-label="证据与范围">
+          <div className="column-heading">
+            <div>
+              <p className="kicker">证据与范围</p>
+              <h3>清楚说明为什么这些评论被纳入，哪些被排除</h3>
+            </div>
+          </div>
+
+          <article className="scope-panel scope-panel--dashboard">
+            <div className="scope-hero">
+              <h4>{scopeSummary.focusSummary}</h4>
+              <span className="pill muted">
+                {scopeSummary.scopeReviewIds?.length ?? 0} 条范围评论
               </span>
+            </div>
+            <p>用户目标：{scopeSummary.requestedGoal}</p>
+            <p>
+              过滤说明：
+              {scopeSummary.selectionSummary ||
+                "系统会根据分析目标、评分、版本和评论内容选择当前分析范围。"}
+            </p>
+            <div className="chip-row" aria-label="分析主题">
+              {scopeSummary.focusAreas.map((item) => (
+                <span className="pill" key={item}>
+                  {item}
+                </span>
+              ))}
+            </div>
+            <div className="scope-columns scope-columns--dashboard">
+              <div>
+                <strong>证据信号</strong>
+                {scopeSummary.dataSignals.map((signal) => (
+                  <p key={signal}>{signal}</p>
+                ))}
+              </div>
+              <div>
+                <strong>过滤规则</strong>
+                {(scopeSummary.filteringRules ?? []).map((rule) => (
+                  <p key={rule}>规则：{rule}</p>
+                ))}
+                {scopeSummary.constraints.map((constraint) => (
+                  <p key={constraint}>{constraint}</p>
+                ))}
+                {scopeSummary.uncertaintyNotes.map((note) => (
+                  <p key={note}>{note}</p>
+                ))}
+              </div>
+            </div>
+            <div className="scope-footer">
+              <span>范围评论：{(scopeSummary.scopeReviewIds ?? []).join(", ") || "全部保留评论"}</span>
+              <span>排除评论：{(scopeSummary.excludedReviewIds ?? []).join(", ") || "无"}</span>
+            </div>
+          </article>
+
+          <article className="review-signal-card">
+            <div className="card-topline">
+              <strong>数据质量与验证</strong>
+              <span className="pill muted">透明记录</span>
+            </div>
+            <div className="review-signal-grid">
+              <div>
+                <span>原始评论</span>
+                <strong>{run.rawReviews.length}</strong>
+              </div>
+              <div>
+                <span>清洗后</span>
+                <strong>{run.reviews.length}</strong>
+              </div>
+              <div>
+                <span>数据限制</span>
+                <strong>{run.dataLimitations.length}</strong>
+              </div>
+            </div>
+            <div className="report-block">
+              <strong>验证消息</strong>
+              {run.validationMessages.map((message) => (
+                <p key={message}>{message}</p>
+              ))}
+            </div>
+          </article>
+        </section>
+
+        <section className="workspace-column workspace-column--deliverables" aria-label="分析交付物">
+          <div className="column-heading">
+            <div>
+              <p className="kicker">分析交付物</p>
+              <h3>PRD、需求、测试和校验在这里统一查看</h3>
+            </div>
+          </div>
+
+          <div className="tabs tabs--workspace" role="tablist" aria-label="交付物类型">
+            {artifactTabs.map((tab) => (
+              <button
+                aria-selected={activeTab === tab.id}
+                className="tab-button"
+                key={tab.id}
+                onClick={() => onChangeTab(tab.id)}
+                role="tab"
+                type="button"
+              >
+                {tab.label}
+              </button>
             ))}
           </div>
-          <div className="scope-columns">
-            <div>
-              <strong>证据信号</strong>
-              {scopeSummary.dataSignals.map((signal) => (
-                <p key={signal}>{signal}</p>
-              ))}
-              {(scopeSummary.excludedReviewIds ?? []).length ? (
-                <p>排除评论：{scopeSummary.excludedReviewIds?.join(", ")}</p>
-              ) : (
-                <p>排除评论：无</p>
-              )}
-            </div>
-            <div>
-              <strong>过滤规则、约束与不确定性</strong>
-              {(scopeSummary.filteringRules ?? []).map((rule) => (
-                <p key={rule}>规则：{rule}</p>
-              ))}
-              {scopeSummary.constraints.map((constraint) => (
-                <p key={constraint}>{constraint}</p>
-              ))}
-              {scopeSummary.uncertaintyNotes.map((note) => (
-                <p key={note}>{note}</p>
-              ))}
-            </div>
+
+          <div className="tab-panel tab-panel--workspace" role="tabpanel">
+            {renderArtifactTab(activeTab, run)}
           </div>
-        </article>
-      </section>
-
-      <section className="insight-panel" aria-label="核心洞察">
-        <div className="insight-header">
-          <div>
-            <p className="kicker">核心洞察</p>
-            <h3>从评论证据提炼出的主要产品信号</h3>
-          </div>
-          <span className="run-id">运行编号：{run.runId}</span>
-        </div>
-
-        <div className="insight-list">
-          {run.findings.length ? (
-            run.findings.map((finding) => (
-              <FindingCard finding={finding} key={finding.id} />
-            ))
-          ) : (
-            <article className="empty-result-card">
-              <AlertTriangle size={18} aria-hidden="true" />
-              <div>
-                <strong>当前没有生成产品发现</strong>
-                <p>系统没有足够评论证据，因此没有继续生成需求或 QA 用例。</p>
-              </div>
-            </article>
-          )}
-        </div>
-      </section>
-
-      <section className="artifact-panel" aria-label="分析交付物">
-        <div className="tabs" role="tablist" aria-label="交付物类型">
-          {artifactTabs.map((tab) => (
-            <button
-              aria-selected={activeTab === tab.id}
-              className="tab-button"
-              key={tab.id}
-              onClick={() => onChangeTab(tab.id)}
-              role="tab"
-              type="button"
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="tab-panel" role="tabpanel">
-          {renderArtifactTab(activeTab, run)}
-        </div>
-      </section>
+        </section>
+      </div>
     </section>
   );
 }
