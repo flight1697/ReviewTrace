@@ -19,10 +19,10 @@ export type DemoReviewRow = {
   locale: string;
   excerpt: string;
   theme: string;
-  sentiment: "Positive" | "Mixed" | "Negative";
+  sentiment: "正向" | "混合" | "负向";
   duplicateOf?: string;
   evidenceUsed: string;
-  source: "Sample" | "Cached" | "Live";
+  source: "示例" | "缓存" | "实时";
 };
 
 export type DemoThemeCard = {
@@ -32,7 +32,7 @@ export type DemoThemeCard = {
   reviews: number;
   share: string;
   avgRating: string;
-  confidence: "High" | "Medium" | "Low";
+  confidence: "高" | "中" | "低";
   trend: string;
   conflicts: number;
   versions: string[];
@@ -44,7 +44,7 @@ export type DemoFindingCard = {
   id: string;
   title: string;
   severity: string;
-  confidence: "High" | "Medium" | "Low";
+  confidence: "高" | "中" | "低";
   sampleCount: number;
   supportingReviews: string[];
   stats: string;
@@ -64,13 +64,13 @@ export type DemoRequirementCard = {
   acceptanceCriteria: string[];
   confidence: string;
   assumption?: boolean;
-  status: "Draft" | "Validated" | "Needs evidence";
+  status: "草案" | "已验证" | "证据不足";
 };
 
 export type DemoTestCase = {
   id: string;
   title: string;
-  type: "Functional" | "UX" | "Regression" | "Failure recovery";
+  type: "功能" | "体验" | "回归" | "失败恢复";
   priority: string;
   requirementId: string;
   sourceReviews: string[];
@@ -84,7 +84,7 @@ export type DemoTestCase = {
 export type DemoValidationIssue = {
   id: string;
   title: string;
-  status: "Valid" | "Warning" | "Broken";
+  status: "有效" | "警告" | "断链";
   path: string;
   reviewCount: number;
   note: string;
@@ -94,64 +94,64 @@ export type DemoValidationIssue = {
 export const demoApp = {
   appName: "Workout for Women: Fitness App",
   runId: "RUN-2026-0720-014",
-  runStatus: "Validated with 3 explicit assumptions",
-  source: "Cached sample",
+  runStatus: "已验证，含 3 个显式假设",
+  source: "缓存示例",
   provider: "GPT-5 · OpenAI",
   lastSaved: "2026-07-20 09:24",
   elapsed: "02:18",
-  progress: "4 of 8 stages complete",
-  exportLabel: "Export",
+  progress: "8 个阶段已完成 4 个",
+  exportLabel: "导出",
 };
 
 export const demoAppPreview = {
   name: "Workout for Women: Fitness App",
   developer: "Fast Builder Ltd.",
-  category: "Health & Fitness",
+  category: "健康与健身",
   version: "7.2.1",
   rating: "4.6",
   reviews: "8,420",
-  storefront: "U.S. storefront",
-  sourceLabel: "Sample",
-  note: "Review availability may vary by storefront and rate limits.",
+  storefront: "美国区商店",
+  sourceLabel: "示例",
+  note: "评论可用性可能受商店地区和限流影响。",
 };
 
 export const demoGoalChips = [
-  "Subscription conversion",
-  "Workout usability",
-  "Low ratings",
-  "Latest version",
-  "Conflicting feedback",
-  "Multilingual reviews",
+  "订阅转化",
+  "训练可用性",
+  "低评分评论",
+  "最新版本",
+  "冲突反馈",
+  "多语言评论",
 ];
 
 export const demoScopeLimits = [
-  "Rating: 1–3 stars",
-  "Date range: last 90 days",
-  "Versions: 7.1, 7.2, 7.2.1",
-  "Languages: en-US, zh-Hans",
-  "Maximum reviews: 1,500",
-  "Minimum evidence threshold: 3 independent reviews",
-  "Include cached sample if collection fails",
+  "评分：1–3 星",
+  "日期范围：最近 90 天",
+  "版本：7.1、7.2、7.2.1",
+  "语言：en-US、zh-Hans",
+  "最大评论数：1,500",
+  "最小证据阈值：3 条独立评论",
+  "采集失败时包含缓存示例",
 ];
 
 export const demoStages = [
-  { id: "scope", label: "1 Scope", status: "complete", method: "Rule", summary: "收敛到订阅转化、训练可用性与取消路径。", input: "108 reviews", output: "3 focus areas", badge: "2 warnings", duration: "12.4s", tokens: "0", cost: "$0.00" },
-  { id: "collect", label: "2 Collect", status: "complete", method: "Tool", summary: "抓取受限时透明降级到缓存样本与导入数据。", input: "1,248 records", output: "824 live + 424 cached", badge: "rate limited", duration: "31.8s", tokens: "0", cost: "$0.00" },
-  { id: "clean", label: "3 Clean", status: "complete", method: "Deterministic", summary: "去空白、去重复、字段归一化。", input: "1,248 raw", output: "1,182 clean", badge: "66 removed", duration: "0.8s", tokens: "0", cost: "$0.00" },
-  { id: "analyze", label: "4 Analyze", status: "running", method: "Model-generated", summary: "聚焦付费说明与使用阻力的主题聚合正在生成。", input: "1,182 clean", output: "6 themes", badge: "46%", duration: "46%", tokens: "2.4k", cost: "$0.18" },
-  { id: "evidence", label: "5 Evidence", status: "pending", method: "Deterministic", summary: "证据覆盖和冲突证据待汇总。", input: "6 themes", output: "5 findings", badge: "pending", duration: "—", tokens: "—", cost: "—" },
-  { id: "prd", label: "6 PRD", status: "pending", method: "Model-generated", summary: "将高置信发现转成需求草案。", input: "5 findings", output: "4 reqs", badge: "pending", duration: "—", tokens: "—", cost: "—" },
-  { id: "tests", label: "7 Test cases", status: "pending", method: "Deterministic", summary: "依据需求与证据生成测试用例。", input: "4 reqs", output: "28 cases", badge: "pending", duration: "—", tokens: "—", cost: "—" },
-  { id: "validate", label: "8 Validate", status: "pending", method: "Deterministic", summary: "检查链路完整性、假设与断链。", input: "28 cases", output: "trace matrix", badge: "pending", duration: "—", tokens: "—", cost: "—" },
+  { id: "scope", label: "1 范围", status: "complete", method: "规则", summary: "收敛到订阅转化、训练可用性与取消路径。", input: "108 条评论", output: "3 个重点范围", badge: "2 个警告", duration: "12.4s", tokens: "0", cost: "$0.00" },
+  { id: "collect", label: "2 收集", status: "complete", method: "工具", summary: "抓取受限时透明降级到缓存样本与导入数据。", input: "1,248 条记录", output: "824 条实时 + 424 条缓存", badge: "已限流", duration: "31.8s", tokens: "0", cost: "$0.00" },
+  { id: "clean", label: "3 清洗", status: "complete", method: "确定性", summary: "去空白、去重复、字段归一化。", input: "1,248 条原始", output: "1,182 条清洗后", badge: "移除 66 条", duration: "0.8s", tokens: "0", cost: "$0.00" },
+  { id: "analyze", label: "4 分析", status: "running", method: "模型生成", summary: "聚焦付费说明与使用阻力的主题聚合正在生成。", input: "1,182 条清洗后", output: "6 个主题", badge: "46%", duration: "46%", tokens: "2.4k", cost: "$0.18" },
+  { id: "evidence", label: "5 证据", status: "pending", method: "确定性", summary: "证据覆盖和冲突证据待汇总。", input: "6 个主题", output: "5 个发现", badge: "等待中", duration: "—", tokens: "—", cost: "—" },
+  { id: "prd", label: "6 PRD", status: "pending", method: "模型生成", summary: "将高置信发现转成需求草案。", input: "5 个发现", output: "4 条需求", badge: "等待中", duration: "—", tokens: "—", cost: "—" },
+  { id: "tests", label: "7 测试用例", status: "pending", method: "确定性", summary: "依据需求与证据生成测试用例。", input: "4 条需求", output: "28 个用例", badge: "等待中", duration: "—", tokens: "—", cost: "—" },
+  { id: "validate", label: "8 验证", status: "pending", method: "确定性", summary: "检查链路完整性、假设与断链。", input: "28 个用例", output: "追溯矩阵", badge: "等待中", duration: "—", tokens: "—", cost: "—" },
 ];
 
 export const demoSummaryMetrics = [
-  { label: "Reviews collected", value: "1,248", hint: "824 live · 424 cached" },
-  { label: "After cleaning", value: "1,182", hint: "66 duplicates / empties removed" },
-  { label: "Duplicates removed", value: "51", hint: "3.9% of raw rows" },
-  { label: "Languages detected", value: "2", hint: "en-US · zh-Hans" },
-  { label: "Model themes", value: "6", hint: "2 high confidence" },
-  { label: "Validation issues", value: "3", hint: "2 warnings · 1 assumption" },
+  { label: "已收集评论", value: "1,248", hint: "824 条实时 · 424 条缓存" },
+  { label: "清洗后评论", value: "1,182", hint: "移除 66 条重复/空内容" },
+  { label: "已去重", value: "51", hint: "占原始行 3.9%" },
+  { label: "识别语言", value: "2", hint: "en-US · zh-Hans" },
+  { label: "模型主题", value: "6", hint: "2 个高置信主题" },
+  { label: "验证问题", value: "3", hint: "2 个警告 · 1 个假设" },
 ];
 
 export const demoReviewRows: DemoReviewRow[] = [
@@ -161,11 +161,11 @@ export const demoReviewRows: DemoReviewRow[] = [
     date: "2026-07-18",
     version: "7.2",
     locale: "en-US",
-    excerpt: "I loved the workouts, but the trial expired before I understood what was included.",
-    theme: "Subscription clarity",
-    sentiment: "Negative",
-    evidenceUsed: "Used in FND-003",
-    source: "Sample",
+    excerpt: "我喜欢训练内容，但还没弄清楚订阅包含什么，试用就结束了。",
+    theme: "订阅说明清晰度",
+    sentiment: "负向",
+    evidenceUsed: "用于 FND-003",
+    source: "示例",
   },
   {
     id: "REV-00818",
@@ -173,12 +173,12 @@ export const demoReviewRows: DemoReviewRow[] = [
     date: "2026-07-16",
     version: "7.2.1",
     locale: "en-US",
-    excerpt: "The workout library is strong, but the cancellation flow is buried too deep.",
-    theme: "Cancellation friction",
-    sentiment: "Mixed",
+    excerpt: "训练库不错，但取消订阅的入口藏得太深。",
+    theme: "取消订阅阻力",
+    sentiment: "混合",
     duplicateOf: "REV-00421",
-    evidenceUsed: "Contradiction for FND-003",
-    source: "Cached",
+    evidenceUsed: "作为 FND-003 的冲突证据",
+    source: "缓存",
   },
   {
     id: "REV-01007",
@@ -187,10 +187,10 @@ export const demoReviewRows: DemoReviewRow[] = [
     version: "7.1",
     locale: "zh-Hans",
     excerpt: "订阅弹窗出来得太早，根本没看懂套餐区别。",
-    theme: "Subscription clarity",
-    sentiment: "Negative",
-    evidenceUsed: "Used in FND-003",
-    source: "Live",
+    theme: "订阅说明清晰度",
+    sentiment: "负向",
+    evidenceUsed: "用于 FND-003",
+    source: "实时",
   },
   {
     id: "REV-01102",
@@ -198,24 +198,24 @@ export const demoReviewRows: DemoReviewRow[] = [
     date: "2026-07-13",
     version: "7.2",
     locale: "en-US",
-    excerpt: "Great coaching tone, but some audio cues are inconsistent across sessions.",
-    theme: "Audio guidance",
-    sentiment: "Mixed",
-    evidenceUsed: "Used in FND-008",
-    source: "Cached",
+    excerpt: "教练语气很好，但不同训练里的语音提示不太一致。",
+    theme: "音频引导",
+    sentiment: "混合",
+    evidenceUsed: "用于 FND-008",
+    source: "缓存",
   },
 ];
 
 export const demoThemeCards: DemoThemeCard[] = [
   {
     id: "THM-006",
-    name: "Subscription cancellation friction",
-    summary: "Users keep asking what is included before they are asked to pay.",
+    name: "订阅取消阻力",
+    summary: "用户在付费前反复询问套餐到底包含什么。",
     reviews: 84,
     share: "17%",
     avgRating: "2.1",
-    confidence: "High",
-    trend: "↑ 18% this week",
+    confidence: "高",
+    trend: "本周 ↑ 18%",
     conflicts: 4,
     versions: ["7.1", "7.2"],
     languages: ["en-US"],
@@ -223,13 +223,13 @@ export const demoThemeCards: DemoThemeCard[] = [
   },
   {
     id: "THM-009",
-    name: "Workout plan availability",
-    summary: "Workout plans are praised, but users miss clearer progression cues.",
+    name: "训练计划可用性",
+    summary: "训练计划受到认可，但用户希望看到更清晰的进度提示。",
     reviews: 61,
     share: "12%",
     avgRating: "3.4",
-    confidence: "Medium",
-    trend: "→ stable",
+    confidence: "中",
+    trend: "→ 稳定",
     conflicts: 2,
     versions: ["7.2"],
     languages: ["en-US", "zh-Hans"],
@@ -237,12 +237,12 @@ export const demoThemeCards: DemoThemeCard[] = [
   },
   {
     id: "THM-012",
-    name: "Audio guidance inconsistency",
-    summary: "Some sessions play narration at different times or volume levels.",
+    name: "音频引导不一致",
+    summary: "部分训练会话的旁白时间点或音量不一致。",
     reviews: 37,
     share: "7%",
     avgRating: "3.0",
-    confidence: "Medium",
+    confidence: "中",
     trend: "↑ 9%",
     conflicts: 1,
     versions: ["7.1", "7.2.1"],
@@ -255,26 +255,26 @@ export const demoFindingCards: DemoFindingCard[] = [
   {
     id: "FND-003",
     title: "订阅价值和取消方式在付费前说明不足",
-    severity: "High",
-    confidence: "High",
+    severity: "高",
+    confidence: "高",
     sampleCount: 7,
     supportingReviews: ["REV-00421", "REV-01007", "REV-00818"],
-    stats: "7 independent reviews across 2 app versions.",
-    synthesis: "Model-generated synthesis. Verify against cited reviews.",
-    contradictingEvidence: ["REV-00818 says pricing is already visible early."],
-    limitation: "Collection was rate-limited. Results mix live and clearly labeled cached sample reviews.",
+    stats: "跨 2 个应用版本的 7 条独立评论。",
+    synthesis: "模型生成归纳，请对照引用评论核验。",
+    contradictingEvidence: ["REV-00818 表示价格在较早阶段已经可见。"],
+    limitation: "采集曾被限流。结果混合实时数据和明确标记的缓存示例。",
   },
   {
     id: "FND-008",
     title: "音频引导在不同训练会话中存在节奏和音量差异",
-    severity: "Medium",
-    confidence: "Medium",
+    severity: "中",
+    confidence: "中",
     sampleCount: 5,
     supportingReviews: ["REV-01102"],
-    stats: "5 reviews, 2 versions, 1 language family.",
-    synthesis: "Model-generated synthesis. Verify against cited reviews.",
-    contradictingEvidence: ["Some users report the cues are helpful and motivating."],
-    limitation: "No clear evidence that the issue affects all workout programs.",
+    stats: "5 条评论，覆盖 2 个版本、1 个语言族。",
+    synthesis: "模型生成归纳，请对照引用评论核验。",
+    contradictingEvidence: ["部分用户认为语音提示很有帮助，也能带来动力。"],
+    limitation: "尚无明确证据证明该问题影响所有训练计划。",
     assumption: true,
   },
 ];
@@ -291,8 +291,8 @@ export const demoRequirements: DemoRequirementCard[] = [
       "订阅确认前显式展示价格、内容、取消方式。",
       "需求说明页可回溯到至少 3 条独立评论证据。",
     ],
-    confidence: "High",
-    status: "Validated",
+    confidence: "高",
+    status: "已验证",
   },
   {
     id: "REQ-009",
@@ -305,76 +305,76 @@ export const demoRequirements: DemoRequirementCard[] = [
       "同一训练会话中的音频提示节奏一致。",
       "不同 session 间音量差异不超过设定阈值。",
     ],
-    confidence: "Medium",
+    confidence: "中",
     assumption: true,
-    status: "Needs evidence",
+    status: "证据不足",
   },
 ];
 
 export const demoTestCases: DemoTestCase[] = [
   {
     id: "TC-012",
-    title: "Preserve workout access after subscription cancellation attempt",
-    type: "Failure recovery",
+    title: "尝试取消订阅后仍保留训练访问提示",
+    type: "失败恢复",
     priority: "P0",
     requirementId: "REQ-004",
     sourceReviews: ["REV-00421", "REV-00818", "REV-01007"],
-    preconditions: ["App installed", "Trial user", "Subscription banner visible"],
+    preconditions: ["已安装应用", "试用用户", "订阅横幅可见"],
     steps: [
-      "Open a premium workout.",
-      "Inspect subscription explanation before confirmation.",
-      "Attempt cancellation flow.",
+      "打开一个高级训练课程。",
+      "在确认前查看订阅说明。",
+      "尝试进入取消订阅流程。",
     ],
-    expected: "User can understand pricing and cancel path without losing workout access cues.",
-    edgeCases: ["Rate limited collection", "Cached sample used"],
-    why: "This test exists because users repeatedly complain about unclear subscription value.",
+    expected: "用户能理解价格和取消路径，并且不会丢失训练访问提示。",
+    edgeCases: ["采集被限流", "使用缓存示例"],
+    why: "该测试存在是因为用户反复抱怨订阅价值说明不清。",
   },
   {
     id: "TC-018",
-    title: "Keep audio guidance volume consistent across sessions",
-    type: "UX",
+    title: "保持不同训练会话中的语音引导音量一致",
+    type: "体验",
     priority: "P1",
     requirementId: "REQ-009",
     sourceReviews: ["REV-01102"],
-    preconditions: ["Two workout sessions", "Audio enabled"],
+    preconditions: ["两个训练会话", "已开启音频"],
     steps: [
-      "Start session A.",
-      "Complete one guided set.",
-      "Start session B and compare cue levels.",
+      "开始训练会话 A。",
+      "完成一个带引导的训练组。",
+      "开始训练会话 B，并比较提示音量。",
     ],
-    expected: "Audio cues stay within the documented consistency range.",
-    edgeCases: ["Language switch", "Low-volume device"],
-    why: "The requirement is still marked as needing evidence, so this test is gated as review-only.",
+    expected: "音频提示保持在文档规定的一致性范围内。",
+    edgeCases: ["切换语言", "设备音量较低"],
+    why: "该需求仍被标记为证据不足，因此测试仅作为待审用例。",
   },
 ];
 
 export const demoValidationIssues: DemoValidationIssue[] = [
   {
     id: "VAL-001",
-    title: "Unsupported finding removed from final scope",
-    status: "Valid",
-    path: "Review → Finding → Requirement → Test",
+    title: "无支撑发现已从最终范围中移除",
+    status: "有效",
+    path: "评论 → 发现 → 需求 → 测试",
     reviewCount: 3,
-    note: "Finding FND-008 is explicitly marked as an assumption and excluded from validated scope.",
-    action: "Mark as assumption",
+    note: "FND-008 已明确标记为假设，并排除在已验证范围之外。",
+    action: "标记为假设",
   },
   {
     id: "VAL-002",
-    title: "One requirement has no fully validated tests",
-    status: "Warning",
-    path: "Requirement → Test",
+    title: "一条需求还没有完全验证的测试",
+    status: "警告",
+    path: "需求 → 测试",
     reviewCount: 1,
-    note: "REQ-009 still needs stronger evidence before promotion.",
-    action: "Link supporting reviews",
+    note: "REQ-009 在提升前仍需要更强证据。",
+    action: "关联支持评论",
   },
   {
     id: "VAL-003",
-    title: "Trace matrix contains a rate-limited live sample",
-    status: "Warning",
-    path: "Review → Finding",
+    title: "追溯矩阵包含被限流影响的实时样本",
+    status: "警告",
+    path: "评论 → 发现",
     reviewCount: 2,
-    note: "The live collection was limited; sample data is clearly labeled.",
-    action: "Continue with available data",
+    note: "实时采集受到限制；示例数据已清晰标记。",
+    action: "使用可用数据继续",
   },
 ];
 
@@ -386,17 +386,17 @@ export const demoOverview = {
     defer: "音频一致性放入下一轮验证。",
   },
   versionPlan: [
-    { label: "v1", note: "Highest-confidence fixes", count: 1 },
-    { label: "v1.1", note: "Medium-confidence improvements", count: 1 },
-    { label: "Later", note: "Insufficient evidence or higher risk", count: 2 },
+    { label: "v1", note: "最高置信度修复", count: 1 },
+    { label: "v1.1", note: "中等置信度改进", count: 1 },
+    { label: "后续", note: "证据不足或风险较高", count: 2 },
   ],
   deliverables: [
-    "Clean dataset",
-    "Theme report",
-    "Findings",
+    "清洗数据集",
+    "主题报告",
+    "发现",
     "PRD",
-    "Test suite",
-    "Traceability report",
+    "测试套件",
+    "追溯报告",
   ],
 };
 
@@ -404,11 +404,11 @@ export const schemaExampleJson = `[
   {
     "review_id": "REV-00421",
     "rating": 2,
-    "text": "I loved the workouts, but the trial expired before I understood what was included.",
+    "text": "我喜欢训练内容，但还没弄清楚订阅包含什么，试用就结束了。",
     "date": "2026-07-18",
     "version": "7.2"
   }
 ]`;
 
 export const schemaExampleCsv = `review_id,rating,text,date,version,locale
-REV-00421,2,"I loved the workouts, but the trial expired before I understood what was included.",2026-07-18,7.2,en-US`;
+REV-00421,2,"我喜欢训练内容，但还没弄清楚订阅包含什么，试用就结束了。",2026-07-18,7.2,en-US`;

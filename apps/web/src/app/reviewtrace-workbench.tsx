@@ -97,34 +97,34 @@ const views: Array<{
   icon: ReactNode;
   label: string;
 }> = [
-  { id: "new", label: "New analysis", description: "Start a new evidence-backed analysis", icon: <LayoutDashboard size={16} /> },
-  { id: "run", label: "Run workspace", description: "Watch stages run with trace detail", icon: <Workflow size={16} /> },
-  { id: "reviews", label: "Reviews", description: "Raw and clean review corpus", icon: <FolderOpen size={16} /> },
-  { id: "findings", label: "Themes & findings", description: "Dynamic themes and evidence-backed findings", icon: <Sparkles size={16} /> },
-  { id: "prd", label: "PRD", description: "Structured requirements and document draft", icon: <BookOpen size={16} /> },
-  { id: "tests", label: "Test cases", description: "Traceable test suite", icon: <TestTube2 size={16} /> },
-  { id: "validate", label: "Validate", description: "Traceability matrix and graph", icon: <GitBranch size={16} /> },
-  { id: "overview", label: "Overview", description: "Decision summary and deliverables", icon: <Gauge size={16} /> },
+  { id: "new", label: "新分析", description: "开始一次基于证据的分析", icon: <LayoutDashboard size={16} /> },
+  { id: "run", label: "运行工作台", description: "查看阶段运行与追溯细节", icon: <Workflow size={16} /> },
+  { id: "reviews", label: "评论", description: "原始与清洗后的评论语料", icon: <FolderOpen size={16} /> },
+  { id: "findings", label: "主题与发现", description: "动态主题与证据支撑的发现", icon: <Sparkles size={16} /> },
+  { id: "prd", label: "PRD", description: "结构化需求与文档草案", icon: <BookOpen size={16} /> },
+  { id: "tests", label: "测试用例", description: "可追溯测试套件", icon: <TestTube2 size={16} /> },
+  { id: "validate", label: "验证", description: "追溯矩阵与关系图", icon: <GitBranch size={16} /> },
+  { id: "overview", label: "总览", description: "决策摘要与交付物", icon: <Gauge size={16} /> },
 ];
 
 const stageNav = [
-  { id: "scope", label: "1 Scope", view: "run" as DemoView },
-  { id: "collect", label: "2 Collect", view: "run" as DemoView },
-  { id: "clean", label: "3 Clean", view: "run" as DemoView },
-  { id: "analyze", label: "4 Analyze", view: "run" as DemoView },
-  { id: "evidence", label: "5 Evidence", view: "findings" as DemoView },
+  { id: "scope", label: "1 范围", view: "run" as DemoView },
+  { id: "collect", label: "2 收集", view: "run" as DemoView },
+  { id: "clean", label: "3 清洗", view: "run" as DemoView },
+  { id: "analyze", label: "4 分析", view: "run" as DemoView },
+  { id: "evidence", label: "5 证据", view: "findings" as DemoView },
   { id: "prd", label: "6 PRD", view: "prd" as DemoView },
-  { id: "tests", label: "7 Test cases", view: "tests" as DemoView },
-  { id: "validate", label: "8 Validate", view: "validate" as DemoView },
+  { id: "tests", label: "7 测试用例", view: "tests" as DemoView },
+  { id: "validate", label: "8 验证", view: "validate" as DemoView },
 ];
 
 const artifactNav = [
-  { id: "reviews", label: "Raw reviews", view: "reviews" as DemoView },
-  { id: "findings", label: "Theme map", view: "findings" as DemoView },
+  { id: "reviews", label: "原始评论", view: "reviews" as DemoView },
+  { id: "findings", label: "主题图谱", view: "findings" as DemoView },
   { id: "prd", label: "PRD v1", view: "prd" as DemoView },
-  { id: "tests", label: "Test suite", view: "tests" as DemoView },
-  { id: "validate", label: "Trace matrix", view: "validate" as DemoView },
-  { id: "overview", label: "Deliverables", view: "overview" as DemoView },
+  { id: "tests", label: "测试套件", view: "tests" as DemoView },
+  { id: "validate", label: "追溯矩阵", view: "validate" as DemoView },
+  { id: "overview", label: "交付物", view: "overview" as DemoView },
 ];
 
 const defaultInspectorMap: Record<DemoView, InspectorSelection> = {
@@ -153,15 +153,21 @@ function stageIcon(status: string) {
 }
 
 function inspectorKindLabel(kind: DemoInspectorKind | "run_health") {
-  if (kind === "run_health") return "Run health";
-  if (kind === "app_preview") return "App preview";
-  if (kind === "review") return "Review";
-  if (kind === "theme") return "Theme";
-  if (kind === "finding") return "Finding";
-  if (kind === "requirement") return "Requirement";
-  if (kind === "test_case") return "Test case";
-  if (kind === "validation_issue") return "Validation";
-  return "Overview";
+  if (kind === "run_health") return "运行健康";
+  if (kind === "app_preview") return "应用预览";
+  if (kind === "review") return "评论";
+  if (kind === "theme") return "主题";
+  if (kind === "finding") return "发现";
+  if (kind === "requirement") return "需求";
+  if (kind === "test_case") return "测试用例";
+  if (kind === "validation_issue") return "验证";
+  return "总览";
+}
+
+function validationStatusClass(status: string) {
+  if (status === "有效") return "valid";
+  if (status === "警告") return "warning";
+  return "broken";
 }
 
 export default function ReviewTraceWorkbench() {
@@ -179,7 +185,7 @@ export default function ReviewTraceWorkbench() {
   const [validateTab, setValidateTab] = useState<ValidateTab>("matrix");
   const [requestedStart, setRequestedStart] = useState(false);
   const [validationAttempted, setValidationAttempted] = useState(false);
-  const [inspectorHint, setInspectorHint] = useState("Sample");
+  const [inspectorHint, setInspectorHint] = useState("示例");
 
   const { error, failWorkflow, progressStages, requestWorkflow, run, stageReports, status } =
     useWorkflowRun();
@@ -196,14 +202,14 @@ export default function ReviewTraceWorkbench() {
       : demoStages.map((stage) => [stage.label, stageLabel(stage.status)]);
 
   const currentRunStatus =
-    status === "running" ? "Running" : run ? "Validated" : status === "failed" ? "Needs attention" : "Demo ready";
+    status === "running" ? "运行中" : run ? "已验证" : status === "failed" ? "需要关注" : "演示就绪";
 
   const currentSource =
     run?.source.label ??
     (sourceMode === "import"
-      ? "Imported CSV"
+      ? "已导入 CSV"
       : sourceMode === "fixture"
-        ? "Cached sample"
+        ? "缓存示例"
         : "App Store API");
 
   const currentRunId = run?.runId ?? demoApp.runId;
@@ -221,14 +227,14 @@ export default function ReviewTraceWorkbench() {
       setActiveView("run");
       setActiveInspector(defaultInspectorMap.run);
       setRequestedStart(false);
-      setInspectorHint("Live");
+      setInspectorHint("实时");
     }
   }, [requestedStart, run]);
 
   function goToView(view: DemoView) {
     setActiveView(view);
     setActiveInspector(defaultInspectorMap[view]);
-    setInspectorHint("Sample");
+    setInspectorHint("示例");
   }
 
   async function handleStartAnalysis() {
@@ -287,7 +293,7 @@ export default function ReviewTraceWorkbench() {
     setSourceMode("import");
     setActiveView("new");
     setActiveInspector({ kind: "app_preview" });
-    setInspectorHint("Import");
+    setInspectorHint("导入");
   }
 
   function handleDropFile(event: React.DragEvent<HTMLDivElement>) {
@@ -303,7 +309,7 @@ export default function ReviewTraceWorkbench() {
       setSourceMode("import");
       setActiveView("new");
       setActiveInspector({ kind: "app_preview" });
-      setInspectorHint("Import");
+      setInspectorHint("导入");
     })();
   }
 
@@ -335,15 +341,15 @@ export default function ReviewTraceWorkbench() {
       <div className="rt-page rt-page--new">
         <div className="rt-page__lead">
           <div>
-            <p className="rt-kicker">New analysis</p>
-            <h1>Start an evidence-backed analysis</h1>
+            <p className="rt-kicker">新分析</p>
+            <h1>开始一次证据支撑的分析</h1>
             <p className="rt-lead">
-              Give ReviewTrace an App Store link or a review dataset. Add a goal so the analysis optimizes for the decision you actually need to make.
+              输入 App Store 链接或评论数据集，再补充一个分析目标，让系统围绕你真正要做的决策展开。
             </p>
           </div>
           <div className="rt-lead__status">
-            <span className="rt-badge rt-badge--success">Sample / Cached / Live</span>
-            <span className="rt-subtle">Review availability may vary by storefront and rate limits.</span>
+            <span className="rt-badge rt-badge--success">示例 / 缓存 / 实时</span>
+            <span className="rt-subtle">不同地区商店与限流情况会影响评论可用性。</span>
           </div>
         </div>
 
@@ -353,14 +359,14 @@ export default function ReviewTraceWorkbench() {
             type="button"
             onClick={() => setSourceMode("live")}
           >
-            App Store link
+            App Store 链接
           </button>
           <button
             className={`rt-segmented__button ${sourceMode === "import" ? "is-active" : ""}`}
             type="button"
             onClick={() => setSourceMode("import")}
           >
-            Import JSON / CSV
+            导入 JSON / CSV
           </button>
         </div>
 
@@ -368,10 +374,10 @@ export default function ReviewTraceWorkbench() {
           <section className={`rt-card rt-card--surface ${sourceMode === "import" ? "rt-card--dimmed" : ""}`}>
             <div className="rt-section-head">
               <div>
-                <p className="rt-kicker">A. App Store link</p>
-                <h2>Paste a valid U.S. App Store URL</h2>
+                <p className="rt-kicker">A. App Store 链接</p>
+                <h2>粘贴可用的 App Store 商店链接</h2>
               </div>
-              <span className="rt-pill">Pre-filled demo</span>
+              <span className="rt-pill">已预填演示链接</span>
             </div>
             <div className="rt-field rt-field--link">
               <span className="rt-field__icon">
@@ -402,7 +408,7 @@ export default function ReviewTraceWorkbench() {
                 </span>
                 <div className="rt-preview__meta">
                   <span>{demoAppPreview.rating} ★</span>
-                  <span>{demoAppPreview.reviews} reviews</span>
+                  <span>{demoAppPreview.reviews} 条评论</span>
                   <span>{demoAppPreview.storefront}</span>
                   <span>{demoAppPreview.sourceLabel}</span>
                 </div>
@@ -414,11 +420,11 @@ export default function ReviewTraceWorkbench() {
           <section className={`rt-card rt-card--surface ${sourceMode === "import" ? "" : "rt-card--dimmed"}`}>
             <div className="rt-section-head">
               <div>
-                <p className="rt-kicker">B. Import JSON / CSV</p>
-                <h2>Drop a review dataset or upload a file</h2>
+                <p className="rt-kicker">B. 导入 JSON / CSV</p>
+                <h2>拖入评论数据集或上传文件</h2>
               </div>
               <a className="rt-link" href={`data:text/plain;charset=utf-8,${encodeURIComponent(schemaExampleJson)}`} download="reviewtrace-schema-example.json">
-                Download schema example
+                下载字段示例
               </a>
             </div>
 
@@ -428,10 +434,10 @@ export default function ReviewTraceWorkbench() {
               onDrop={handleDropFile}
             >
               <Upload size={22} />
-              <strong>Drag JSON / CSV here</strong>
-              <span>Supports review_id, rating, text, date, locale, version.</span>
+              <strong>将 JSON / CSV 拖到这里</strong>
+              <span>支持 review_id、rating、text、date、locale、version。</span>
               <label className="rt-button rt-button--ghost">
-                Choose file
+                选择文件
                 <input
                   aria-label="导入评论文件"
                   accept=".json,.csv,application/json,text/csv"
@@ -443,23 +449,23 @@ export default function ReviewTraceWorkbench() {
 
             <div className="rt-import-grid">
               <div>
-                <span className="rt-mini-label">Selected file</span>
-                <strong>{importFileName || "No file selected"}</strong>
+                <span className="rt-mini-label">已选文件</span>
+                <strong>{importFileName || "未选择文件"}</strong>
               </div>
               <div>
-                <span className="rt-mini-label">Rows previewed</span>
-                <strong>{importText ? "5 rows" : "0 rows"}</strong>
+                <span className="rt-mini-label">预览行数</span>
+                <strong>{importText ? "5 行" : "0 行"}</strong>
               </div>
               <div>
-                <span className="rt-mini-label">Data source</span>
-                <strong>{sourceMode === "import" ? "Imported" : "Sample"}</strong>
+                <span className="rt-mini-label">数据来源</span>
+                <strong>{sourceMode === "import" ? "已导入" : "示例"}</strong>
               </div>
             </div>
 
             <div className="rt-code-sample">
               <div className="rt-code-sample__head">
-                <span>Field mapping</span>
-                <span>First 5 rows preview</span>
+                <span>字段映射</span>
+                <span>前 5 行预览</span>
               </div>
               <pre>{schemaExampleCsv}</pre>
             </div>
@@ -469,17 +475,17 @@ export default function ReviewTraceWorkbench() {
         <section className="rt-card rt-card--surface">
           <div className="rt-section-head">
             <div>
-              <p className="rt-kicker">Analysis goal</p>
-              <h2>Add a goal so the analysis optimizes for the right decision</h2>
+              <p className="rt-kicker">分析目标</p>
+              <h2>补充目标，让分析围绕正确决策展开</h2>
             </div>
-            <span className="rt-pill">4–6 lines recommended</span>
+            <span className="rt-pill">建议 4–6 行</span>
           </div>
           <textarea
             aria-label="分析目标"
             className="rt-textarea rt-textarea--goal"
             value={analysisGoal}
             onChange={(event) => setAnalysisGoal(event.target.value)}
-            placeholder="Focus on subscription conversion, workout usability, app version 7.2, and low-rating reviews. Surface conflicting feedback and avoid conclusions supported by fewer than 3 independent reviews."
+            placeholder="聚焦订阅转化、训练可用性、7.2 版本与低评分评论。请突出冲突反馈，避免依赖少于 3 条独立评论的结论。"
           />
           <div className="rt-chip-row">
             {demoGoalChips.map((chip) => (
@@ -498,10 +504,10 @@ export default function ReviewTraceWorkbench() {
         <section className="rt-card rt-card--surface rt-card--limits">
           <div className="rt-section-head">
             <div>
-              <p className="rt-kicker">Scope & limits</p>
-              <h2>Transparent controls for rating, versions, languages, and thresholds</h2>
+              <p className="rt-kicker">范围与限制</p>
+              <h2>对评分、版本、语言和阈值提供透明控制</h2>
             </div>
-            <span className="rt-pill">Collapsible</span>
+            <span className="rt-pill">可折叠</span>
           </div>
           <div className="rt-limit-grid">
             {demoScopeLimits.map((item) => (
@@ -511,20 +517,20 @@ export default function ReviewTraceWorkbench() {
             ))}
           </div>
           <div className="rt-inline-metrics">
-            <div><strong>Model selector</strong><span>GPT-5 · OpenAI</span></div>
-            <div><strong>Rules</strong><span>Deterministic + LLM stages</span></div>
-            <div><strong>Fallback</strong><span>Include cached sample if collection fails</span></div>
+            <div><strong>模型选择器</strong><span>GPT-5 · OpenAI</span></div>
+            <div><strong>规则</strong><span>确定性 + LLM 阶段</span></div>
+            <div><strong>兜底</strong><span>采集失败时包含缓存示例</span></div>
           </div>
         </section>
 
         <footer className="rt-action-bar">
           <div>
-            <span className="rt-mini-label">Estimated flow</span>
-            <strong>8 stages · about 3 minutes on a live dataset</strong>
+            <span className="rt-mini-label">预估流程</span>
+            <strong>8 个阶段 · 实时数据集约 3 分钟</strong>
           </div>
           <div className="rt-action-bar__buttons">
             <button className="rt-button rt-button--secondary" type="button">
-              Save as draft
+              保存草稿
             </button>
             <button
               className="rt-button rt-button--primary"
@@ -533,7 +539,7 @@ export default function ReviewTraceWorkbench() {
               disabled={status === "running"}
             >
               {status === "running" ? <Loader2 className="rt-spin" size={16} /> : <Play size={16} />}
-              Start analysis
+              开始分析
             </button>
           </div>
         </footer>
@@ -545,21 +551,21 @@ export default function ReviewTraceWorkbench() {
   function renderRunWorkspace() {
     const progressCopy = run
       ? "4 of 8 stages complete · 02:18 elapsed. The flow stays honest about limits, retries, and what still needs evidence."
-      : "Demo workspace · 4 of 8 stages shown. Start analysis to watch a live run and inspect evidence.";
+      : "演示工作台 · 展示 8 个阶段中的 4 个。开始分析后即可查看实时运行与证据。";
 
     return (
       <div className="rt-page">
         <div className="rt-page__lead">
           <div>
-            <p className="rt-kicker">Run workspace</p>
-            <h1>{run ? "Watch the live run" : "Traceable execution in a single view"}</h1>
+            <p className="rt-kicker">运行工作台</p>
+            <h1>{run ? "查看实时运行" : "单页追溯式执行视图"}</h1>
             <p className="rt-lead">{progressCopy}</p>
           </div>
           <div className="rt-lead__status">
             <span className={`rt-badge ${status === "running" ? "rt-badge--running" : run ? "rt-badge--success" : "rt-badge--warning"}`}>
               {currentRunStatus}
             </span>
-            <span className="rt-subtle">Run ID {currentRunId}</span>
+            <span className="rt-subtle">运行 ID {currentRunId}</span>
           </div>
         </div>
 
@@ -582,10 +588,10 @@ export default function ReviewTraceWorkbench() {
         <section className="rt-card rt-card--surface">
           <div className="rt-section-head">
             <div>
-              <p className="rt-kicker">Trace timeline</p>
-              <h2>Expandable rows expose method type, inputs, outputs, token, and warnings</h2>
+              <p className="rt-kicker">追溯时间线</p>
+              <h2>可展开行展示方法类型、输入、输出、token 与警告</h2>
             </div>
-            <span className="rt-pill">Deterministic / Model-generated</span>
+            <span className="rt-pill">确定性 / 模型生成</span>
           </div>
           <div className="rt-trace-list">
             {currentStages.map(([name, stageStatus], index) => {
@@ -596,7 +602,7 @@ export default function ReviewTraceWorkbench() {
                     <span className={`rt-status-dot rt-status-dot--${demoStage?.status ?? "pending"}`}>{stageIcon(demoStage?.status ?? "pending")}</span>
                     <span className="rt-trace-row__main">
                       <strong>{name}</strong>
-                      <span>{demoStage?.method ?? "Deterministic"} · {demoStage?.summary ?? "Pending"}</span>
+                      <span>{demoStage?.method ?? "确定性"} · {demoStage?.summary ?? "等待中"}</span>
                     </span>
                     <span className="rt-trace-row__meta">
                       <small>{stageStatus}</small>
@@ -610,14 +616,14 @@ export default function ReviewTraceWorkbench() {
                   </summary>
                   <div className="rt-trace-row__body">
                     <div>
-                      <span className="rt-mini-label">Summary</span>
+                      <span className="rt-mini-label">摘要</span>
                       <p>{demoStage?.summary}</p>
                     </div>
                     <div className="rt-trace-grid">
-                      <div><strong>Inputs</strong><span>{demoStage?.input}</span></div>
-                      <div><strong>Outputs</strong><span>{demoStage?.output}</span></div>
-                      <div><strong>Warnings</strong><span>{demoStage?.badge}</span></div>
-                      <div><strong>Tokens</strong><span>{demoStage?.tokens}</span></div>
+                      <div><strong>输入</strong><span>{demoStage?.input}</span></div>
+                      <div><strong>输出</strong><span>{demoStage?.output}</span></div>
+                      <div><strong>警告</strong><span>{demoStage?.badge}</span></div>
+                      <div><strong>Token</strong><span>{demoStage?.tokens}</span></div>
                     </div>
                   </div>
                 </details>
@@ -629,10 +635,10 @@ export default function ReviewTraceWorkbench() {
         <section className="rt-card rt-card--surface">
           <div className="rt-section-head">
             <div>
-              <p className="rt-kicker">Stage report</p>
-              <h2>Every report keeps revisions, failures, and notes visible</h2>
+              <p className="rt-kicker">阶段报告</p>
+              <h2>每条报告都保留修订、失败与说明</h2>
             </div>
-            <span className="rt-pill">{stageReports.length || demoStages.length} reports</span>
+            <span className="rt-pill">{stageReports.length || demoStages.length} 条报告</span>
           </div>
           <div className="rt-report-grid">
             {(stageReports.length ? stageReports : demoStages.slice(0, 4).map((stage, index) => ({
@@ -640,8 +646,8 @@ export default function ReviewTraceWorkbench() {
               status: stage.status,
               summary: stage.summary,
               details: [stage.input, stage.output],
-              revisions: index === 1 ? ["Rate limited live data; used cached sample as fallback."] : ["Deterministic step."] ,
-              errors: stage.status === "warning" ? ["Needs attention"] : [],
+              revisions: index === 1 ? ["实时数据被限流；已使用缓存示例兜底。"] : ["确定性步骤。"] ,
+              errors: stage.status === "warning" ? ["需要关注"] : [],
             }))).map((report) => (
               <article key={report.name} className="rt-report-card">
                 <div className="rt-report-card__head">
@@ -667,7 +673,7 @@ export default function ReviewTraceWorkbench() {
           <section className="rt-card rt-card--surface rt-card--error">
             <AlertTriangle size={18} />
             <div>
-              <strong>Stage failed, but the flow stays honest about it.</strong>
+              <strong>阶段失败，但流程会如实展示。</strong>
               <p>{error}</p>
             </div>
           </section>
@@ -682,37 +688,37 @@ export default function ReviewTraceWorkbench() {
       <div className="rt-page">
         <div className="rt-page__lead">
           <div>
-            <p className="rt-kicker">Review corpus</p>
-            <h1>Raw and clean reviews</h1>
-            <p className="rt-lead">1,284 raw → 1,182 clean. Search, filter, and open any row in the inspector.</p>
+              <p className="rt-kicker">评论语料</p>
+              <h1>原始评论与清洗评论</h1>
+              <p className="rt-lead">1,284 条原始 → 1,182 条清洗后。可搜索、筛选并在右侧检查器中打开任一行。</p>
           </div>
           <div className="rt-tabs">
-            <button className={`rt-tab ${reviewTab === "raw" ? "is-active" : ""}`} type="button" onClick={() => setReviewTab("raw")}>Raw reviews</button>
-            <button className={`rt-tab ${reviewTab === "clean" ? "is-active" : ""}`} type="button" onClick={() => setReviewTab("clean")}>Clean dataset</button>
+            <button className={`rt-tab ${reviewTab === "raw" ? "is-active" : ""}`} type="button" onClick={() => setReviewTab("raw")}>原始评论</button>
+            <button className={`rt-tab ${reviewTab === "clean" ? "is-active" : ""}`} type="button" onClick={() => setReviewTab("clean")}>清洗数据集</button>
           </div>
         </div>
 
         <div className="rt-filter-bar">
-          <button className="rt-chip rt-chip--soft" type="button"><Search size={14} /> Search</button>
-          <button className="rt-chip rt-chip--soft" type="button"><Filter size={14} /> Rating</button>
-          <button className="rt-chip rt-chip--soft" type="button"><CalendarRange size={14} /> Date</button>
-          <button className="rt-chip rt-chip--soft" type="button"><Layers3 size={14} /> Version</button>
-          <button className="rt-chip rt-chip--soft" type="button"><ClipboardCheck size={14} /> Duplicate</button>
+          <button className="rt-chip rt-chip--soft" type="button"><Search size={14} /> 搜索</button>
+          <button className="rt-chip rt-chip--soft" type="button"><Filter size={14} /> 评分</button>
+          <button className="rt-chip rt-chip--soft" type="button"><CalendarRange size={14} /> 日期</button>
+          <button className="rt-chip rt-chip--soft" type="button"><Layers3 size={14} /> 版本</button>
+          <button className="rt-chip rt-chip--soft" type="button"><ClipboardCheck size={14} /> 重复项</button>
         </div>
 
         <section className="rt-card rt-card--surface">
           <table className="rt-table">
             <thead>
               <tr>
-                <th>Review ID</th>
-                <th>Rating</th>
-                <th>Date</th>
-                <th>Version</th>
-                <th>Locale</th>
-                <th>Excerpt</th>
-                <th>Theme</th>
-                <th>Sentiment</th>
-                <th>Evidence used</th>
+                <th>评论 ID</th>
+                <th>评分</th>
+                <th>日期</th>
+                <th>版本</th>
+                <th>地区</th>
+                <th>摘录</th>
+                <th>主题</th>
+                <th>情绪</th>
+                <th>证据用途</th>
               </tr>
             </thead>
             <tbody>
@@ -740,10 +746,10 @@ export default function ReviewTraceWorkbench() {
         <section className="rt-card rt-card--surface">
           <div className="rt-section-head">
             <div>
-              <p className="rt-kicker">Selected review</p>
-              <h2>Lineage, source label, and duplicate state stay visible</h2>
+              <p className="rt-kicker">所选评论</p>
+              <h2>来源链、数据标签和重复状态保持可见</h2>
             </div>
-            <span className="rt-pill">Click any row</span>
+            <span className="rt-pill">点击任一行</span>
           </div>
           <div className="rt-review-detail">
             {renderReviewSummary(rows[0])}
@@ -759,13 +765,13 @@ export default function ReviewTraceWorkbench() {
       <div className="rt-page">
         <div className="rt-page__lead">
           <div>
-            <p className="rt-kicker">Themes & findings</p>
-            <h1>Dynamic themes and evidence-backed findings</h1>
-            <p className="rt-lead">Themes are not fixed keywords. Findings carry stats, synthesis, contradictions, and assumptions.</p>
+            <p className="rt-kicker">主题与发现</p>
+            <h1>动态主题与证据支撑的发现</h1>
+            <p className="rt-lead">主题不是固定关键词。发现会展示统计、归纳、冲突证据与假设。</p>
           </div>
           <div className="rt-tabs">
-            <button className={`rt-tab ${findingsTab === "themes" ? "is-active" : ""}`} type="button" onClick={() => setFindingsTab("themes")}>Themes</button>
-            <button className={`rt-tab ${findingsTab === "findings" ? "is-active" : ""}`} type="button" onClick={() => setFindingsTab("findings")}>Findings</button>
+            <button className={`rt-tab ${findingsTab === "themes" ? "is-active" : ""}`} type="button" onClick={() => setFindingsTab("themes")}>主题</button>
+            <button className={`rt-tab ${findingsTab === "findings" ? "is-active" : ""}`} type="button" onClick={() => setFindingsTab("findings")}>发现</button>
           </div>
         </div>
 
@@ -773,10 +779,10 @@ export default function ReviewTraceWorkbench() {
           <section className="rt-card rt-card--surface">
             <div className="rt-section-head">
               <div>
-                <p className="rt-kicker">Themes</p>
-                <h2>Theme cards surface support, confidence, trend, and conflicts</h2>
+                <p className="rt-kicker">主题</p>
+                <h2>主题卡展示支持度、置信度、趋势和冲突</h2>
               </div>
-              <span className="rt-pill">High / Medium / Low</span>
+              <span className="rt-pill">高 / 中 / 低</span>
             </div>
             <div className="rt-theme-list">
               {demoThemeCards.map((theme) => (
@@ -795,8 +801,8 @@ export default function ReviewTraceWorkbench() {
                   </div>
                   <p>{theme.summary}</p>
                   <div className="rt-theme-card__meta">
-                    <span>{theme.reviews} reviews · {theme.share}</span>
-                    <span>{theme.avgRating} avg rating · {theme.trend}</span>
+                    <span>{theme.reviews} 条评论 · {theme.share}</span>
+                    <span>{theme.avgRating} 平均评分 · {theme.trend}</span>
                     <span>{theme.conflicts} conflicts</span>
                   </div>
                   <div className="rt-sparkline" aria-hidden="true">
@@ -812,10 +818,10 @@ export default function ReviewTraceWorkbench() {
           <section className="rt-card rt-card--surface">
             <div className="rt-section-head">
               <div>
-                <p className="rt-kicker">Findings</p>
-                <h2>Evidence-backed finding cards separate stats, synthesis, conflicts, and assumptions</h2>
+                <p className="rt-kicker">发现</p>
+                <h2>发现卡片分开展示统计、归纳、冲突与假设</h2>
               </div>
-              <span className="rt-pill">Promote to requirement</span>
+              <span className="rt-pill">提升为需求</span>
             </div>
             <div className="rt-finding-list">
               {demoFindingCards.map((finding) => (
@@ -846,10 +852,10 @@ export default function ReviewTraceWorkbench() {
         <section className="rt-card rt-card--surface">
           <div className="rt-section-head">
             <div>
-              <p className="rt-kicker">Theme trend</p>
-              <h2>Click a data point to return to the review corpus</h2>
+              <p className="rt-kicker">主题趋势</p>
+              <h2>点击数据点可回到评论语料</h2>
             </div>
-            <span className="rt-pill">Representative excerpts</span>
+              <span className="rt-pill">代表性摘录</span>
           </div>
           <div className="rt-theme-trend">
             <div className="rt-trend-chart">
@@ -882,15 +888,15 @@ export default function ReviewTraceWorkbench() {
       <div className="rt-page">
         <div className="rt-page__lead">
           <div>
-            <p className="rt-kicker">PRD editor</p>
-            <h1>PRD v1 Draft</h1>
-            <p className="rt-lead">Generated from validated findings and kept traceable back to reviews.</p>
+            <p className="rt-kicker">PRD 编辑器</p>
+            <h1>PRD v1 草案</h1>
+            <p className="rt-lead">由已验证发现生成，并保持可追溯到评论。</p>
           </div>
           <div className="rt-lead__status">
-            <span className="rt-badge rt-badge--success">Evidence coverage 91%</span>
+            <span className="rt-badge rt-badge--success">证据覆盖率 91%</span>
             <div className="rt-inline-actions">
-              <button className="rt-button rt-button--ghost" type="button"><FileDown size={16} /> Export Markdown</button>
-              <button className="rt-button rt-button--ghost" type="button"><Download size={16} /> Export JSON</button>
+              <button className="rt-button rt-button--ghost" type="button"><FileDown size={16} /> 导出 Markdown</button>
+              <button className="rt-button rt-button--ghost" type="button"><Download size={16} /> 导出 JSON</button>
             </div>
           </div>
         </div>
@@ -899,12 +905,12 @@ export default function ReviewTraceWorkbench() {
           <aside className="rt-card rt-card--surface">
             <div className="rt-section-head">
               <div>
-                <p className="rt-kicker">Outline</p>
-                <h2>Document sections</h2>
+                <p className="rt-kicker">目录</p>
+                <h2>文档章节</h2>
               </div>
             </div>
             <nav className="rt-outline">
-              {["Overview", "Problem statement", "Goals", "Non-goals", "Users & scenarios", "Requirements", "Version plan", "Risks & assumptions", "Success metrics", "Open questions"].map((item) => (
+              {["总览", "问题陈述", "目标", "非目标", "用户与场景", "需求", "版本计划", "风险与假设", "成功指标", "待解问题"].map((item) => (
                 <button key={item} className="rt-outline__item" type="button">{item}</button>
               ))}
             </nav>
@@ -913,35 +919,35 @@ export default function ReviewTraceWorkbench() {
           <section className="rt-card rt-card--surface">
             <div className="rt-section-head">
               <div>
-                <p className="rt-kicker">Document body</p>
-                <h2>Editable narrative with evidence badges</h2>
+                <p className="rt-kicker">文档正文</p>
+                <h2>可编辑叙述与证据徽标</h2>
               </div>
             </div>
             <article className="rt-prd-doc">
               <section>
-                <strong>Overview</strong>
-                <p>ReviewTrace turns app reviews into an evidence-backed product plan and traceable test suite.</p>
+                <strong>总览</strong>
+                <p>ReviewTrace 会把应用评论转化为有证据链支撑的产品计划和可追溯测试套件。</p>
               </section>
               <section>
-                <strong>Problem statement</strong>
-                <textarea className="rt-textarea" defaultValue="Users do not understand subscription value and cancellation paths before they are pushed into payment." />
+                <strong>问题陈述</strong>
+                <textarea className="rt-textarea" defaultValue="用户在被推到付费前，并不清楚订阅价值和取消路径。" />
               </section>
               <section>
-                <strong>Goals</strong>
-                <p>Improve clarity, reduce surprise, and keep every requirement traceable to review evidence.</p>
+                <strong>目标</strong>
+                <p>提升清晰度，减少意外，并让每条需求都能追溯到评论证据。</p>
               </section>
               <section>
-                <strong>Non-goals</strong>
-                <p>Do not claim evidence that is not present. Do not validate assumptions without explicit markers.</p>
+                <strong>非目标</strong>
+                <p>不要声称不存在的证据。没有显式标记时，不要把假设当成已验证事实。</p>
               </section>
               <section>
-                <strong>Version plan</strong>
+                <strong>版本计划</strong>
                 <div className="rt-plan-row">
                   {demoOverview.versionPlan.map((item) => (
                     <div key={item.label} className="rt-plan-card">
                       <strong>{item.label}</strong>
                       <span>{item.note}</span>
-                      <small>{item.count} items</small>
+                      <small>{item.count} 项</small>
                     </div>
                   ))}
                 </div>
@@ -952,8 +958,8 @@ export default function ReviewTraceWorkbench() {
           <section className="rt-card rt-card--surface">
             <div className="rt-section-head">
               <div>
-                <p className="rt-kicker">Requirements</p>
-                <h2>Structure keeps lineage intact while drafts remain editable</h2>
+                <p className="rt-kicker">需求</p>
+                <h2>结构化需求在可编辑的同时保留来源链</h2>
               </div>
               <span className="rt-pill">REQ-004</span>
             </div>
@@ -993,13 +999,13 @@ export default function ReviewTraceWorkbench() {
       <div className="rt-page">
         <div className="rt-page__lead">
           <div>
-            <p className="rt-kicker">Test cases</p>
-            <h1>Traceable test suite</h1>
-            <p className="rt-lead">28 test cases · 12 requirements covered · Evidence-linked tests 100%.</p>
+            <p className="rt-kicker">测试用例</p>
+            <h1>可追溯测试套件</h1>
+            <p className="rt-lead">28 个测试用例 · 覆盖 12 条需求 · 证据关联测试 100%。</p>
           </div>
           <div className="rt-lead__status">
-            <span className="rt-badge rt-badge--success">Coverage 92%</span>
-            <span className="rt-badge rt-badge--warning">3 edge cases need review</span>
+            <span className="rt-badge rt-badge--success">覆盖率 92%</span>
+            <span className="rt-badge rt-badge--warning">3 个边界情况需审查</span>
           </div>
         </div>
 
@@ -1007,13 +1013,13 @@ export default function ReviewTraceWorkbench() {
           <table className="rt-table">
             <thead>
               <tr>
-                <th>Test ID</th>
-                <th>Title</th>
-                <th>Type</th>
-                <th>Priority</th>
-                <th>Linked requirement</th>
-                <th>Source reviews</th>
-                <th>Status</th>
+                <th>测试 ID</th>
+                <th>标题</th>
+                <th>类型</th>
+                <th>优先级</th>
+                <th>关联需求</th>
+                <th>来源评论</th>
+                <th>状态</th>
               </tr>
             </thead>
             <tbody>
@@ -1027,7 +1033,7 @@ export default function ReviewTraceWorkbench() {
                   <td>{testCase.priority}</td>
                   <td>{testCase.requirementId}</td>
                   <td>{testCase.sourceReviews.join(", ")}</td>
-                  <td>Draft</td>
+                  <td>草案</td>
                 </tr>
               ))}
             </tbody>
@@ -1037,8 +1043,8 @@ export default function ReviewTraceWorkbench() {
         <section className="rt-card rt-card--surface">
           <div className="rt-section-head">
             <div>
-              <p className="rt-kicker">Detail view</p>
-              <h2>Why this test exists</h2>
+              <p className="rt-kicker">详情视图</p>
+              <h2>这个测试为什么存在</h2>
             </div>
             <span className="rt-pill">{selected.id}</span>
           </div>
@@ -1046,10 +1052,10 @@ export default function ReviewTraceWorkbench() {
             <strong>{selected.title}</strong>
             <p>{selected.why}</p>
             <div className="rt-detail-grid">
-              <div><span>Preconditions</span><ul>{selected.preconditions.map((item) => <li key={item}>{item}</li>)}</ul></div>
-              <div><span>Steps</span><ol>{selected.steps.map((item) => <li key={item}>{item}</li>)}</ol></div>
-              <div><span>Expected</span><p>{selected.expected}</p></div>
-              <div><span>Edge cases</span><ul>{selected.edgeCases.map((item) => <li key={item}>{item}</li>)}</ul></div>
+              <div><span>前置条件</span><ul>{selected.preconditions.map((item) => <li key={item}>{item}</li>)}</ul></div>
+              <div><span>步骤</span><ol>{selected.steps.map((item) => <li key={item}>{item}</li>)}</ol></div>
+              <div><span>预期结果</span><p>{selected.expected}</p></div>
+              <div><span>边界情况</span><ul>{selected.edgeCases.map((item) => <li key={item}>{item}</li>)}</ul></div>
             </div>
           </article>
         </section>
@@ -1062,37 +1068,37 @@ export default function ReviewTraceWorkbench() {
       <div className="rt-page">
         <div className="rt-page__lead">
           <div>
-            <p className="rt-kicker">Traceability validation</p>
-            <h1>Review → Finding → Requirement → Test case</h1>
-            <p className="rt-lead">Matrix is default. Graph is available, but deliberately restrained.</p>
+            <p className="rt-kicker">追溯验证</p>
+            <h1>评论 → 发现 → 需求 → 测试用例</h1>
+            <p className="rt-lead">默认显示矩阵视图，图谱视图可用但保持克制。</p>
           </div>
           <div className="rt-tabs">
-            <button className={`rt-tab ${validateTab === "matrix" ? "is-active" : ""}`} type="button" onClick={() => setValidateTab("matrix")}>Matrix</button>
-            <button className={`rt-tab ${validateTab === "graph" ? "is-active" : ""}`} type="button" onClick={() => setValidateTab("graph")}>Graph</button>
+            <button className={`rt-tab ${validateTab === "matrix" ? "is-active" : ""}`} type="button" onClick={() => setValidateTab("matrix")}>矩阵</button>
+            <button className={`rt-tab ${validateTab === "graph" ? "is-active" : ""}`} type="button" onClick={() => setValidateTab("graph")}>图谱</button>
           </div>
         </div>
 
         <div className="rt-inline-metrics">
-          <div className="rt-metric"><span>Fully traceable</span><strong>94%</strong><small>Validated with 3 explicit assumptions</small></div>
-          <div className="rt-metric"><span>Unsupported findings</span><strong>2</strong><small>Need to be removed or marked as assumptions</small></div>
-          <div className="rt-metric"><span>Requirements without tests</span><strong>1</strong><small>Generate missing test</small></div>
-          <div className="rt-metric"><span>Contradictory groups</span><strong>4</strong><small>Reviewed but not ignored</small></div>
+          <div className="rt-metric"><span>完全可追溯</span><strong>94%</strong><small>含 3 个显式假设</small></div>
+          <div className="rt-metric"><span>无支撑发现</span><strong>2</strong><small>需要移除或标记为假设</small></div>
+          <div className="rt-metric"><span>无测试需求</span><strong>1</strong><small>生成缺失测试</small></div>
+          <div className="rt-metric"><span>冲突组</span><strong>4</strong><small>已审查，但未忽略</small></div>
         </div>
 
         {validateTab === "matrix" ? (
           <section className="rt-card rt-card--surface">
             <div className="rt-section-head">
               <div>
-                <p className="rt-kicker">Matrix</p>
-                <h2>Each row is a collapsible trace chain</h2>
+                <p className="rt-kicker">矩阵</p>
+                <h2>每一行都是可折叠的追溯链</h2>
               </div>
-              <span className="rt-pill">Broken links / warnings / assumptions</span>
+              <span className="rt-pill">断链 / 警告 / 假设</span>
             </div>
             <div className="rt-validation-list">
               {demoValidationIssues.map((issue) => (
                 <button
                   key={issue.id}
-                  className={`rt-validation-card rt-validation-card--${issue.status.toLowerCase()}`}
+                  className={`rt-validation-card rt-validation-card--${validationStatusClass(issue.status)}`}
                   type="button"
                   onClick={() => setActiveInspector({ kind: "validation_issue", id: issue.id })}
                 >
@@ -1101,7 +1107,7 @@ export default function ReviewTraceWorkbench() {
                     <span className="rt-pill">{issue.status}</span>
                   </div>
                   <p>{issue.title}</p>
-                  <small>{issue.path} · {issue.reviewCount} reviews</small>
+                  <small>{issue.path} · {issue.reviewCount} 条评论</small>
                   <span>{issue.action}</span>
                 </button>
               ))}
@@ -1111,20 +1117,20 @@ export default function ReviewTraceWorkbench() {
           <section className="rt-card rt-card--surface">
             <div className="rt-section-head">
               <div>
-                <p className="rt-kicker">Graph</p>
-                <h2>Node colors represent type; edges represent valid, warning, or broken</h2>
+                <p className="rt-kicker">图谱</p>
+                <h2>节点颜色表示类型，连线表示有效、警告或断链</h2>
               </div>
-              <span className="rt-pill">Show only path to selected test</span>
+              <span className="rt-pill">仅显示到所选测试的路径</span>
             </div>
             <div className="rt-graph">
-              {["Review", "Finding", "Requirement", "Test case"].map((node, index) => (
+              {["评论", "发现", "需求", "测试用例"].map((node, index) => (
                 <div key={node} className="rt-graph__node">
                   <span>{index + 1}</span>
                   <strong>{node}</strong>
                 </div>
               ))}
-              <div className="rt-graph__edge">valid</div>
-              <div className="rt-graph__edge rt-graph__edge--warning">warning</div>
+              <div className="rt-graph__edge">有效</div>
+              <div className="rt-graph__edge rt-graph__edge--warning">警告</div>
             </div>
           </section>
         )}
@@ -1137,11 +1143,11 @@ export default function ReviewTraceWorkbench() {
       <div className="rt-page">
         <div className="rt-page__lead">
           <div>
-            <p className="rt-kicker">Final overview</p>
-            <h1>Decision summary</h1>
-            <p className="rt-lead">What users struggle with, what evidence is strongest, what remains uncertain, and what to build first.</p>
+            <p className="rt-kicker">最终总览</p>
+            <h1>决策摘要</h1>
+            <p className="rt-lead">用户最困扰什么、哪些证据最强、哪些仍不确定，以及优先该做什么。</p>
           </div>
-          <span className="rt-badge rt-badge--success">Validated with assumptions</span>
+          <span className="rt-badge rt-badge--success">已验证，含显式假设</span>
         </div>
 
         <section className="rt-grid rt-grid--overview">
@@ -1156,8 +1162,8 @@ export default function ReviewTraceWorkbench() {
         <section className="rt-card rt-card--surface">
           <div className="rt-section-head">
             <div>
-              <p className="rt-kicker">Version plan</p>
-              <h2>Prioritize highest-confidence fixes first</h2>
+              <p className="rt-kicker">版本计划</p>
+              <h2>优先处理高置信度修复</h2>
             </div>
           </div>
           <div className="rt-plan-row">
@@ -1165,7 +1171,7 @@ export default function ReviewTraceWorkbench() {
               <article key={item.label} className="rt-plan-card">
                 <strong>{item.label}</strong>
                 <span>{item.note}</span>
-                <small>{item.count} items</small>
+                <small>{item.count} 项</small>
               </article>
             ))}
           </div>
@@ -1174,8 +1180,8 @@ export default function ReviewTraceWorkbench() {
         <section className="rt-card rt-card--surface">
           <div className="rt-section-head">
             <div>
-              <p className="rt-kicker">Deliverables</p>
-              <h2>Everything stays labeled and exportable</h2>
+              <p className="rt-kicker">交付物</p>
+              <h2>所有交付物都带标签且可导出</h2>
             </div>
           </div>
           <div className="rt-deliverable-grid">
@@ -1183,7 +1189,7 @@ export default function ReviewTraceWorkbench() {
               <article key={item} className="rt-deliverable-card">
                 <FolderOpen size={18} />
                 <strong>{item}</strong>
-                <span>Versioned · Updated · Verified</span>
+                <span>已版本化 · 已更新 · 已验证</span>
               </article>
             ))}
           </div>
@@ -1201,15 +1207,15 @@ export default function ReviewTraceWorkbench() {
         </div>
         <p>{review.excerpt}</p>
         <div className="rt-detail-grid rt-detail-grid--compact">
-          <div><span>Rating</span><strong>{review.rating}★</strong></div>
-          <div><span>Date</span><strong>{review.date}</strong></div>
-          <div><span>Version</span><strong>{review.version}</strong></div>
-          <div><span>Locale</span><strong>{review.locale}</strong></div>
+          <div><span>评分</span><strong>{review.rating}★</strong></div>
+          <div><span>日期</span><strong>{review.date}</strong></div>
+          <div><span>版本</span><strong>{review.version}</strong></div>
+          <div><span>地区</span><strong>{review.locale}</strong></div>
         </div>
         <div className="rt-mini-stack">
-          <span>Theme: {review.theme}</span>
-          <span>Evidence used: {review.evidenceUsed}</span>
-          {review.duplicateOf ? <span className="rt-warning">Duplicate of {review.duplicateOf}</span> : null}
+          <span>主题：{review.theme}</span>
+          <span>证据用途：{review.evidenceUsed}</span>
+          {review.duplicateOf ? <span className="rt-warning">重复于 {review.duplicateOf}</span> : null}
         </div>
       </div>
     );
@@ -1218,15 +1224,15 @@ export default function ReviewTraceWorkbench() {
   function renderInspector() {
     if (activeInspector.kind === "app_preview") {
       return (
-        <InspectorCard title="App preview" subtitle="Sample" icon={<AppIcon />}>
+        <InspectorCard title="应用预览" subtitle="示例" icon={<AppIcon />}>
           <div className="rt-inspector-list">
-            <div><span>Name</span><strong>{demoAppPreview.name}</strong></div>
-            <div><span>Developer</span><strong>{demoAppPreview.developer}</strong></div>
-            <div><span>Category</span><strong>{demoAppPreview.category}</strong></div>
-            <div><span>Version</span><strong>{demoAppPreview.version}</strong></div>
-            <div><span>Rating</span><strong>{demoAppPreview.rating} ★</strong></div>
-            <div><span>Reviews</span><strong>{demoAppPreview.reviews}</strong></div>
-            <div><span>Storefront</span><strong>{demoAppPreview.storefront}</strong></div>
+            <div><span>名称</span><strong>{demoAppPreview.name}</strong></div>
+            <div><span>开发者</span><strong>{demoAppPreview.developer}</strong></div>
+            <div><span>分类</span><strong>{demoAppPreview.category}</strong></div>
+            <div><span>版本</span><strong>{demoAppPreview.version}</strong></div>
+            <div><span>评分</span><strong>{demoAppPreview.rating} ★</strong></div>
+            <div><span>评论</span><strong>{demoAppPreview.reviews}</strong></div>
+            <div><span>商店</span><strong>{demoAppPreview.storefront}</strong></div>
           </div>
           <p className="rt-note">{demoAppPreview.note}</p>
         </InspectorCard>
@@ -1235,16 +1241,16 @@ export default function ReviewTraceWorkbench() {
 
     if (activeInspector.kind === "run_health") {
       return (
-        <InspectorCard title="Run health" subtitle={inspectorHint} icon={<Gauge />}>
+        <InspectorCard title="运行健康" subtitle={inspectorHint} icon={<Gauge />}>
           <div className="rt-inspector-metrics">
-            <div><span>Data completeness</span><strong>82%</strong></div>
-            <div><span>Evidence coverage</span><strong>74%</strong></div>
-            <div><span>Traceability coverage</span><strong>0%</strong></div>
+            <div><span>数据完整度</span><strong>82%</strong></div>
+            <div><span>证据覆盖率</span><strong>74%</strong></div>
+            <div><span>追溯覆盖率</span><strong>0%</strong></div>
           </div>
           <div className="rt-mini-stack">
-            <span>Provider: {currentProvider}</span>
-            <span>Source: {currentSource}</span>
-            <span>Known limitations: rate limits, cached sample fallback, assumption gating.</span>
+            <span>提供方：{currentProvider}</span>
+            <span>来源：{currentSource}</span>
+            <span>已知限制：限流、缓存示例兜底、假设门控。</span>
           </div>
         </InspectorCard>
       );
@@ -1252,18 +1258,18 @@ export default function ReviewTraceWorkbench() {
 
     if (activeInspector.kind === "review") {
       const review = demoReviewRows.find((row) => row.id === activeInspector.id) ?? demoReviewRows[0];
-      return <InspectorCard title="Review" subtitle={review.id} icon={<FolderOpen />}>{renderReviewSummary(review)}</InspectorCard>;
+      return <InspectorCard title="评论" subtitle={review.id} icon={<FolderOpen />}>{renderReviewSummary(review)}</InspectorCard>;
     }
 
     if (activeInspector.kind === "theme") {
       const theme = demoThemeCards.find((item) => item.id === activeInspector.id) ?? demoThemeCards[0];
       return (
-        <InspectorCard title="Theme" subtitle={theme.id} icon={<Sparkles />}>
+        <InspectorCard title="主题" subtitle={theme.id} icon={<Sparkles />}>
           <div className="rt-inspector-list">
-            <div><span>Name</span><strong>{theme.name}</strong></div>
-            <div><span>Confidence</span><strong>{theme.confidence}</strong></div>
-            <div><span>Reviews</span><strong>{theme.reviews}</strong></div>
-            <div><span>Conflicts</span><strong>{theme.conflicts}</strong></div>
+            <div><span>名称</span><strong>{theme.name}</strong></div>
+            <div><span>置信度</span><strong>{theme.confidence}</strong></div>
+            <div><span>评论</span><strong>{theme.reviews}</strong></div>
+            <div><span>冲突</span><strong>{theme.conflicts}</strong></div>
           </div>
           <p>{theme.summary}</p>
           <div className="rt-sparkline rt-sparkline--mini">
@@ -1276,11 +1282,11 @@ export default function ReviewTraceWorkbench() {
     if (activeInspector.kind === "finding") {
       const finding = demoFindingCards.find((item) => item.id === activeInspector.id) ?? demoFindingCards[0];
       return (
-        <InspectorCard title="Finding" subtitle={finding.id} icon={<Sparkles />}>
+        <InspectorCard title="发现" subtitle={finding.id} icon={<Sparkles />}>
           <div className="rt-inspector-list">
-            <div><span>Severity</span><strong>{finding.severity}</strong></div>
-            <div><span>Confidence</span><strong>{finding.confidence}</strong></div>
-            <div><span>Samples</span><strong>{finding.sampleCount}</strong></div>
+            <div><span>严重度</span><strong>{finding.severity}</strong></div>
+            <div><span>置信度</span><strong>{finding.confidence}</strong></div>
+            <div><span>样本</span><strong>{finding.sampleCount}</strong></div>
           </div>
           <p>{finding.stats}</p>
           <p>{finding.synthesis}</p>
@@ -1295,18 +1301,18 @@ export default function ReviewTraceWorkbench() {
     if (activeInspector.kind === "requirement") {
       const req = demoRequirements.find((item) => item.id === activeInspector.id) ?? demoRequirements[0];
       return (
-        <InspectorCard title="Requirement" subtitle={req.id} icon={<BookOpen />}>
+        <InspectorCard title="需求" subtitle={req.id} icon={<BookOpen />}>
           <div className="rt-inspector-list">
-            <div><span>Priority</span><strong>{req.priority}</strong></div>
-            <div><span>Status</span><strong>{req.status}</strong></div>
-            <div><span>Target</span><strong>{req.targetRelease}</strong></div>
-            <div><span>Confidence</span><strong>{req.confidence}</strong></div>
+            <div><span>优先级</span><strong>{req.priority}</strong></div>
+            <div><span>状态</span><strong>{req.status}</strong></div>
+            <div><span>目标版本</span><strong>{req.targetRelease}</strong></div>
+            <div><span>置信度</span><strong>{req.confidence}</strong></div>
           </div>
           <p>{req.statement}</p>
           <div className="rt-mini-stack">
-            <span>Source findings: {req.sourceFindings.join(", ")}</span>
-            <span>Source reviews: {req.sourceReviews.join(", ")}</span>
-            {req.assumption ? <span className="rt-warning">Explicit assumption</span> : null}
+            <span>来源发现：{req.sourceFindings.join(", ")}</span>
+            <span>来源评论：{req.sourceReviews.join(", ")}</span>
+            {req.assumption ? <span className="rt-warning">显式假设</span> : null}
           </div>
         </InspectorCard>
       );
@@ -1315,16 +1321,16 @@ export default function ReviewTraceWorkbench() {
     if (activeInspector.kind === "test_case") {
       const testCase = demoTestCases.find((item) => item.id === activeInspector.id) ?? demoTestCases[0];
       return (
-        <InspectorCard title="Test case" subtitle={testCase.id} icon={<TestTube2 />}>
+        <InspectorCard title="测试用例" subtitle={testCase.id} icon={<TestTube2 />}>
           <div className="rt-inspector-list">
-            <div><span>Type</span><strong>{testCase.type}</strong></div>
-            <div><span>Priority</span><strong>{testCase.priority}</strong></div>
-            <div><span>Requirement</span><strong>{testCase.requirementId}</strong></div>
+            <div><span>类型</span><strong>{testCase.type}</strong></div>
+            <div><span>优先级</span><strong>{testCase.priority}</strong></div>
+            <div><span>需求</span><strong>{testCase.requirementId}</strong></div>
           </div>
           <p>{testCase.expected}</p>
           <div className="rt-mini-stack">
-            <span>Why: {testCase.why}</span>
-            <span>Source reviews: {testCase.sourceReviews.join(", ")}</span>
+            <span>原因：{testCase.why}</span>
+            <span>来源评论：{testCase.sourceReviews.join(", ")}</span>
           </div>
         </InspectorCard>
       );
@@ -1333,22 +1339,22 @@ export default function ReviewTraceWorkbench() {
     if (activeInspector.kind === "validation_issue") {
       const issue = demoValidationIssues.find((item) => item.id === activeInspector.id) ?? demoValidationIssues[0];
       return (
-        <InspectorCard title="Validation" subtitle={issue.id} icon={<GitBranch />}>
+        <InspectorCard title="验证" subtitle={issue.id} icon={<GitBranch />}>
           <div className="rt-inspector-list">
-            <div><span>Status</span><strong>{issue.status}</strong></div>
-            <div><span>Reviews</span><strong>{issue.reviewCount}</strong></div>
-            <div><span>Path</span><strong>{issue.path}</strong></div>
+            <div><span>状态</span><strong>{issue.status}</strong></div>
+            <div><span>评论</span><strong>{issue.reviewCount}</strong></div>
+            <div><span>路径</span><strong>{issue.path}</strong></div>
           </div>
           <p>{issue.note}</p>
           <div className="rt-mini-stack">
-            <span>Action: {issue.action}</span>
+            <span>动作：{issue.action}</span>
           </div>
         </InspectorCard>
       );
     }
 
     return (
-      <InspectorCard title="Overview" subtitle="Decision summary" icon={<Gauge />}>
+      <InspectorCard title="总览" subtitle="决策摘要" icon={<Gauge />}>
         <div className="rt-mini-stack">
           <span>{demoOverview.summary.strongest}</span>
           <span>{demoOverview.summary.uncertain}</span>
@@ -1369,15 +1375,15 @@ export default function ReviewTraceWorkbench() {
           </div>
           <div>
             <strong>ReviewTrace</strong>
-            <span>Evidence-first workbench</span>
+            <span>证据优先工作台</span>
           </div>
-          <button className="rt-nav__collapse" type="button" aria-label="Collapse navigation">
+          <button className="rt-nav__collapse" type="button" aria-label="折叠导航">
             <PanelLeft size={16} />
           </button>
         </div>
 
         <section className="rt-nav__section">
-          <span className="rt-nav__heading">Global</span>
+          <span className="rt-nav__heading">全局</span>
           {views.slice(0, 3).map((item) => (
             <button
               key={item.id}
@@ -1395,7 +1401,7 @@ export default function ReviewTraceWorkbench() {
         </section>
 
         <section className="rt-nav__section">
-          <span className="rt-nav__heading">Stages</span>
+          <span className="rt-nav__heading">阶段</span>
           {stageNav.map((item) => (
             <button
               key={item.id}
@@ -1413,7 +1419,7 @@ export default function ReviewTraceWorkbench() {
         </section>
 
         <section className="rt-nav__section">
-          <span className="rt-nav__heading">Artifacts</span>
+          <span className="rt-nav__heading">交付物</span>
           {artifactNav.map((item) => (
             <button
               key={item.id}
@@ -1445,15 +1451,15 @@ export default function ReviewTraceWorkbench() {
             </div>
             <div className="rt-topbar__meta">
               <span className="rt-topbar__token">{demoApp.runId}</span>
-              <span className={`rt-badge ${currentRunStatus === "Running" ? "rt-badge--running" : currentRunStatus === "Validated" ? "rt-badge--success" : "rt-badge--warning"}`}>{currentRunStatus}</span>
+              <span className={`rt-badge ${currentRunStatus === "运行中" ? "rt-badge--running" : currentRunStatus === "已验证" ? "rt-badge--success" : "rt-badge--warning"}`}>{currentRunStatus}</span>
               <span className="rt-topbar__token">{currentSource}</span>
               <span className="rt-topbar__token">{currentProvider}</span>
-              <span className="rt-topbar__token">Last saved {demoApp.lastSaved}</span>
+              <span className="rt-topbar__token">上次保存 {demoApp.lastSaved}</span>
             </div>
           </div>
           <div className="rt-topbar__actions">
             <button className="rt-button rt-button--ghost" type="button"><Download size={16} /> {demoApp.exportLabel}</button>
-            <button className="rt-button rt-button--ghost" type="button"><MoreHorizontal size={16} /> More</button>
+            <button className="rt-button rt-button--ghost" type="button"><MoreHorizontal size={16} /> 更多</button>
           </div>
         </header>
 
@@ -1471,7 +1477,7 @@ export default function ReviewTraceWorkbench() {
           <aside className="rt-inspector">
             <div className="rt-inspector__head">
               <div>
-                <p className="rt-kicker">Evidence inspector</p>
+                <p className="rt-kicker">证据检查器</p>
                 <h2>{inspectorKindLabel(activeInspector.kind)}</h2>
               </div>
               <button className="rt-button rt-button--ghost" type="button"><PanelRight size={16} /></button>

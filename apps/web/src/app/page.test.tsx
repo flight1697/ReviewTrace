@@ -33,21 +33,21 @@ describe("ReviewTrace 工作台", () => {
 
     expect(screen.getByRole("heading", { name: "ReviewTrace" })).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Start an evidence-backed analysis" }),
+      screen.getByRole("heading", { name: "开始一次证据支撑的分析" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Start analysis/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /App Store link/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Import JSON \/ CSV/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /开始分析/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /App Store 链接/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /导入 JSON \/ CSV/ })).toBeInTheDocument();
     expect(screen.getByLabelText("App Store 链接")).toBeInTheDocument();
     expect(screen.getByLabelText("分析目标")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Download schema example/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /下载字段示例/ })).toHaveAttribute(
       "download",
       "reviewtrace-schema-example.json",
     );
 
     await waitFor(() => {
       expect(
-        screen.getByRole("heading", { name: "App preview" }),
+        screen.getByRole("heading", { name: "应用预览" }),
       ).toBeInTheDocument();
     });
   });
@@ -55,14 +55,14 @@ describe("ReviewTrace 工作台", () => {
   it("支持 App Store 与导入模式切换", () => {
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Import JSON \/ CSV/i }));
+    fireEvent.click(screen.getByRole("button", { name: /导入 JSON \/ CSV/ }));
 
-    expect(screen.getByText("Drag JSON / CSV here")).toBeInTheDocument();
-    expect(screen.getByText("Selected file")).toBeInTheDocument();
+    expect(screen.getByText("将 JSON / CSV 拖到这里")).toBeInTheDocument();
+    expect(screen.getByText("已选文件")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /App Store link/i }));
+    fireEvent.click(screen.getByRole("button", { name: /App Store 链接/ }));
 
-    expect(screen.getByRole("button", { name: /Start analysis/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /开始分析/ })).toBeInTheDocument();
   });
 
   it("切换到 Reviews 与 Findings 页面后仍然能看见核心数据", () => {
@@ -70,23 +70,23 @@ describe("ReviewTrace 工作台", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: "ReviewsRaw and clean review corpus",
+        name: "评论原始与清洗后的评论语料",
       }),
     );
 
-    expect(screen.getByRole("heading", { name: "Raw and clean reviews" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "原始评论与清洗评论" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "REV-00421" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "REV-00818" })).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: /Theme map/i,
+        name: /主题图谱/,
       }),
     );
 
     expect(
       screen.getByRole("heading", {
-        name: "Dynamic themes and evidence-backed findings",
+        name: "动态主题与证据支撑的发现",
       }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /THM-006/ })).toBeInTheDocument();
@@ -98,23 +98,23 @@ describe("ReviewTrace 工作台", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: "PRD v1Structured requirements and document draft",
+        name: "PRD v1结构化需求与文档草案",
       }),
     );
-    expect(screen.getByRole("heading", { name: "PRD v1 Draft" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "PRD v1 草案" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /REQ-004/ })).toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Test suiteTraceable test suite" }),
+      screen.getByRole("button", { name: "测试套件可追溯测试套件" }),
     );
-    expect(screen.getByRole("heading", { name: "Traceable test suite" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "可追溯测试套件" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /TC-012/ })).toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Trace matrixTraceability matrix and graph" }),
+      screen.getByRole("button", { name: "追溯矩阵追溯矩阵与关系图" }),
     );
     expect(
-      screen.getByRole("heading", { name: "Review → Finding → Requirement → Test case" }),
+      screen.getByRole("heading", { name: "评论 → 发现 → 需求 → 测试用例" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /VAL-001/ })).toBeInTheDocument();
   });
