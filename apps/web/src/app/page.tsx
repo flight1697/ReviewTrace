@@ -4,153 +4,21 @@ import { Activity, Play, Upload } from "lucide-react";
 import type { ChangeEvent } from "react";
 import { useState } from "react";
 
-const stages = [
-  ["范围", "等待中"],
-  ["评论", "等待中"],
-  ["清洗", "等待中"],
-  ["证据", "等待中"],
-  ["产品需求文档", "等待中"],
-  ["测试", "等待中"],
-  ["校验", "等待中"],
-] as const;
-
-type WorkflowStage = {
-  name: string;
-  status: string;
-};
-
-type Review = {
-  id: string;
-  rating: number;
-  title: string;
-  body: string;
-};
-
-type Finding = {
-  id: string;
-  title: string;
-  reviewIds: string[];
-  sampleCount: number;
-  confidence: string;
-  evidence: {
-    reviewId: string;
-    excerpt: string;
-  }[];
-  conflictingEvidence: {
-    reviewId: string;
-    excerpt: string;
-  }[];
-};
-
-type Requirement = {
-  id: string;
-  title: string;
-  priority: string;
-  version: string;
-  findingIds: string[];
-  sourceReviewIds: string[];
-  boundaries: string[];
-  assumption: boolean;
-};
-
-type VersionPlan = {
-  versions: {
-    id: string;
-    name: string;
-    goal: string;
-    requirementIds: string[];
-    sourceReviewIds: string[];
-  }[];
-};
-
-type PrdDraft = {
-  title: string;
-  objective: string;
-  versions: VersionPlan["versions"];
-  requirements: Requirement[];
-  successMetrics: string[];
-  assumptions: Requirement[];
-};
-
-type TestCase = {
-  id: string;
-  title: string;
-  requirementId: string;
-  sourceReviewIds: string[];
-  steps: string[];
-  expectedResult: string;
-};
-
-type WorkflowRun = {
-  runId: string;
-  source: {
-    mode: string;
-    label: string;
-  };
-  scope: {
-    appStoreUrl: string;
-    analysisGoal: string;
-    storefront: string;
-  };
-  stages: WorkflowStage[];
-  rawReviews: Review[];
-  reviews: Review[];
-  cleaningSummary: {
-    inputCount: number;
-    retainedCount: number;
-    duplicateCount: number;
-    discardedEmptyCount: number;
-  };
-  ratingSummary: {
-    averageRating: number;
-    ratingCounts: Record<string, number>;
-  };
-  analysisSummary: {
-    provider: string;
-    model: string;
-    modelDriven: boolean;
-  };
-  findings: Finding[];
-  requirements: Requirement[];
-  versionPlan: VersionPlan;
-  prd: PrdDraft;
-  testCases: TestCase[];
-  dataLimitations: string[];
-  traceabilityValidation: {
-    status: string;
-    unsupportedFindingIds: string[];
-    unsupportedRequirementIds: string[];
-    unsupportedTestCaseIds: string[];
-  };
-  validationMessages: string[];
-};
-
-const defaultAppStoreLink =
-  "https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684";
-const defaultAnalysisGoal = "关注订阅转化相关投诉";
-const apiUrl =
-  process.env.NEXT_PUBLIC_REVIEWTRACE_API_URL ?? "http://localhost:8000";
-const stageLabels: Record<string, string> = {
-  analysis: "证据",
-  cleaning: "清洗",
-  prd: "产品需求文档",
-  reviews: "评论",
-  scope: "范围",
-  tests: "测试",
-  validation: "校验",
-};
-const statusLabels: Record<string, string> = {
-  complete: "已完成",
-  failed: "失败",
-  pending: "等待中",
-  running: "运行中",
-};
+import {
+  defaultAnalysisGoal,
+  defaultAppStoreLink,
+  readFileText,
+  requestWorkflowRun,
+  type WorkflowRun,
+  type WorkflowStatus,
+  visibleWorkflowStages,
+} from "./workflow";
 
 export default function Home() {
   const [appStoreLink, setAppStoreLink] = useState(defaultAppStoreLink);
   const [analysisGoal, setAnalysisGoal] = useState(defaultAnalysisGoal);
   const [run, setRun] = useState<WorkflowRun | null>(null);
-  const [status, setStatus] = useState<"idle" | "running" | "failed">("idle");
+  const [status, setStatus] = useState<WorkflowStatus>("idle");
   const [error, setError] = useState("");
 
   async function requestWorkflow(body: Record<string, string>) {
@@ -158,19 +26,7 @@ export default function Home() {
     setError("");
 
     try {
-      const response = await fetch(`${apiUrl}/workflow/runs`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (!response.ok) {
-        throw new Error(await workflowErrorMessage(response));
-      }
-
-      setRun((await response.json()) as WorkflowRun);
+      setRun(await requestWorkflowRun(body));
       setStatus("idle");
     } catch (caughtError) {
       setStatus("failed");
@@ -226,14 +82,7 @@ export default function Home() {
     }
   }
 
-  const visibleStages = run
-    ? run.stages.map((stage) => [
-        stageLabels[stage.name] ?? stage.name,
-        statusLabels[stage.status] ?? stage.status,
-      ])
-    : status === "running"
-      ? stages.map(([name], index) => [name, index === 0 ? "运行中" : "等待中"])
-    : stages;
+  const visibleStages = visibleWorkflowStages(run, status);
 
   return (
     <main className="shell">
@@ -491,27 +340,4 @@ export default function Home() {
       </section>
     </main>
   );
-}
-
-async function workflowErrorMessage(response: Response) {
-  try {
-    const errorBody = (await response.json()) as { detail?: string };
-    return errorBody.detail || "工作流请求失败";
-  } catch {
-    return "工作流请求失败";
-  }
-}
-
-function readFileText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.addEventListener("load", () => {
-      resolve(String(reader.result ?? ""));
-    });
-    reader.addEventListener("error", () => {
-      reject(new Error("读取导入文件失败"));
-    });
-    reader.readAsText(file);
-  });
 }

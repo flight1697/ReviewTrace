@@ -60,99 +60,52 @@ def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
 def run_live_workflow(request: WorkflowRunRequest) -> dict[str, object]:
     app_id, storefront = parse_us_app_store_url(request.app_store_url)
     raw_reviews = fetch_app_store_reviews(app_id, storefront)
-    cleaning_result = clean_reviews(raw_reviews)
-    reviews = cleaning_result["reviews"]
-    analysis = analyze_reviews(reviews, request.analysis_goal)
-    findings = enrich_findings_with_evidence(analysis["findings"], reviews)
-    artifacts = generate_product_artifacts(request.analysis_goal, findings, reviews)
+    workflow = complete_review_workflow(raw_reviews, request.analysis_goal)
 
-    return {
-        "runId": f"live-{app_id}",
-        "source": {
+    return workflow_run_payload(
+        run_id=f"live-{app_id}",
+        source={
             "mode": "live",
             "label": "U.S. App Store 最新评论",
         },
-        "scope": {
+        scope={
             "appStoreUrl": request.app_store_url,
             "analysisGoal": request.analysis_goal,
             "storefront": storefront,
         },
-        "stages": completed_stages(),
-        "rawReviews": raw_reviews,
-        "reviews": reviews,
-        "cleaningSummary": cleaning_result["summary"],
-        "ratingSummary": summarize_ratings(reviews),
-        "analysisSummary": analysis["summary"],
-        "findings": artifacts["findings"],
-        "requirements": artifacts["requirements"],
-        "versionPlan": artifacts["versionPlan"],
-        "prd": artifacts["prd"],
-        "testCases": artifacts["testCases"],
-        "dataLimitations": data_limitations(reviews),
-        "traceabilityValidation": artifacts["traceabilityValidation"],
-        "validationMessages": [
+        raw_reviews=raw_reviews,
+        workflow=workflow,
+        validation_messages=[
             "已从 Apple RSS 评论源获取最新公开评论；若评论数量较少，请结合导入数据复核。"
         ],
-    }
+    )
 
 
 def run_fixture_workflow(request: WorkflowRunRequest) -> dict[str, object]:
-    reviews = load_fixture_reviews()
-    review_ids = [str(review["id"]) for review in reviews]
-    findings = enrich_findings_with_evidence(
-        [
-            {
-                "id": "finding-subscription-clarity",
-                "title": "订阅转化前，订阅价值和取消方式说明不够清楚。",
-                "reviewIds": review_ids,
-                "sampleCount": 2,
-                "confidence": "中等",
-                "method": "示例模型桩",
-                "conflictingEvidence": [],
-            }
-        ],
-        reviews,
+    raw_reviews = load_fixture_reviews()
+    workflow = complete_review_workflow(
+        raw_reviews,
+        request.analysis_goal,
+        analysis_override=build_fixture_analysis,
     )
-    artifacts = generate_product_artifacts(request.analysis_goal, findings, reviews)
-    requirements = artifacts["requirements"]
 
-    return {
-        "runId": "fixture-run-001",
-        "source": {
+    return workflow_run_payload(
+        run_id="fixture-run-001",
+        source={
             "mode": request.source_mode,
             "label": "缓存示例数据集",
         },
-        "scope": {
+        scope={
             "appStoreUrl": request.app_store_url,
             "analysisGoal": request.analysis_goal,
             "storefront": "us",
         },
-        "stages": completed_stages(),
-        "rawReviews": reviews,
-        "reviews": reviews,
-        "cleaningSummary": {
-            "inputCount": 2,
-            "retainedCount": 2,
-            "duplicateCount": 0,
-            "discardedEmptyCount": 0,
-        },
-        "ratingSummary": summarize_ratings(reviews),
-        "analysisSummary": {
-            "provider": "stub",
-            "model": "fixture-model-stub",
-            "modelDriven": False,
-        },
-        "findings": artifacts["findings"],
-        "requirements": requirements,
-        "versionPlan": artifacts["versionPlan"],
-        "prd": artifacts["prd"],
-        "testCases": artifacts["testCases"],
-        "dataLimitations": artifacts["dataLimitations"],
-        "traceabilityValidation": artifacts["traceabilityValidation"],
-        "validationMessages": [
+        raw_reviews=raw_reviews,
+        workflow=workflow,
+        validation_messages=[
             "所有发现、需求和测试用例都已关联示例评论证据。"
         ],
-    }
+    )
 
 
 def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
@@ -163,27 +116,45 @@ def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
         raise HTTPException(status_code=400, detail="导入数据不能为空。")
 
     raw_reviews = parse_imported_reviews(dataset_format, dataset_text)
-    cleaning_result = clean_reviews(raw_reviews)
-    reviews = cleaning_result["reviews"]
-    analysis = analyze_reviews(reviews, request.analysis_goal)
-    findings = enrich_findings_with_evidence(analysis["findings"], reviews)
-    artifacts = generate_product_artifacts(request.analysis_goal, findings, reviews)
+    workflow = complete_review_workflow(raw_reviews, request.analysis_goal)
 
-    return {
-        "runId": "import-run-001",
-        "source": {
+    return workflow_run_payload(
+        run_id="import-run-001",
+        source={
             "mode": "import",
             "label": f"导入的 {dataset_format.upper()} 数据集",
         },
-        "scope": {
+        scope={
             "appStoreUrl": request.app_store_url,
             "analysisGoal": request.analysis_goal,
             "storefront": "us",
         },
-        "stages": completed_stages(),
-        "rawReviews": raw_reviews,
-        "reviews": reviews,
+        raw_reviews=raw_reviews,
+        workflow=workflow,
+        validation_messages=[
+            "导入数据已完成结构化、清洗和基础统计，后续语义分析会在模型阶段替换当前占位结果。"
+        ],
+    )
+
+
+def complete_review_workflow(
+    raw_reviews: list[dict[str, object]],
+    analysis_goal: str,
+    analysis_override: Any | None = None,
+) -> dict[str, object]:
+    cleaning_result = clean_reviews(raw_reviews)
+    reviews = cleaning_result["reviews"]
+    analysis = (
+        analysis_override(reviews)
+        if analysis_override
+        else analyze_reviews(reviews, analysis_goal)
+    )
+    findings = enrich_findings_with_evidence(analysis["findings"], reviews)
+    artifacts = generate_product_artifacts(analysis_goal, findings, reviews)
+
+    return {
         "cleaningSummary": cleaning_result["summary"],
+        "reviews": reviews,
         "ratingSummary": summarize_ratings(reviews),
         "analysisSummary": analysis["summary"],
         "findings": artifacts["findings"],
@@ -193,8 +164,57 @@ def run_import_workflow(request: WorkflowRunRequest) -> dict[str, object]:
         "testCases": artifacts["testCases"],
         "dataLimitations": artifacts["dataLimitations"],
         "traceabilityValidation": artifacts["traceabilityValidation"],
-        "validationMessages": [
-            "导入数据已完成结构化、清洗和基础统计，后续语义分析会在模型阶段替换当前占位结果。"
+    }
+
+
+def workflow_run_payload(
+    run_id: str,
+    source: dict[str, object],
+    scope: dict[str, object],
+    raw_reviews: list[dict[str, object]],
+    workflow: dict[str, object],
+    validation_messages: list[str],
+) -> dict[str, object]:
+    return {
+        "runId": run_id,
+        "source": source,
+        "scope": scope,
+        "stages": completed_stages(),
+        "rawReviews": raw_reviews,
+        "reviews": workflow["reviews"],
+        "cleaningSummary": workflow["cleaningSummary"],
+        "ratingSummary": workflow["ratingSummary"],
+        "analysisSummary": workflow["analysisSummary"],
+        "findings": workflow["findings"],
+        "requirements": workflow["requirements"],
+        "versionPlan": workflow["versionPlan"],
+        "prd": workflow["prd"],
+        "testCases": workflow["testCases"],
+        "dataLimitations": workflow["dataLimitations"],
+        "traceabilityValidation": workflow["traceabilityValidation"],
+        "validationMessages": validation_messages,
+    }
+
+
+def build_fixture_analysis(reviews: list[dict[str, object]]) -> dict[str, object]:
+    review_ids = [str(review["id"]) for review in reviews]
+
+    return {
+        "summary": {
+            "provider": "stub",
+            "model": "fixture-model-stub",
+            "modelDriven": False,
+        },
+        "findings": [
+            {
+                "id": "finding-subscription-clarity",
+                "title": "订阅转化前，订阅价值和取消方式说明不够清楚。",
+                "reviewIds": review_ids,
+                "sampleCount": len(review_ids),
+                "confidence": "中等",
+                "method": "示例模型桩",
+                "conflictingEvidence": [],
+            }
         ],
     }
 
