@@ -361,6 +361,55 @@ textarea:focus {
   line-height: 1.6;
 }
 
+.model-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  border: 1px solid #d9e2de;
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: #f8fbfa;
+}
+
+.model-status.ready {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.model-status.fallback {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.model-status strong,
+.model-status span {
+  display: block;
+}
+
+.model-status strong {
+  color: #17211d;
+  font-size: 13px;
+}
+
+.model-status > div > span {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.model-chip {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: #0f766e;
+  background: #ccfbf1;
+  font-size: 12px;
+  font-weight: 750;
+}
+
 .timeline-card {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -717,7 +766,8 @@ blockquote span {
   .section-heading,
   .insight-header,
   .submit-row,
-  .finding-title-row {
+  .finding-title-row,
+  .model-status {
     align-items: flex-start;
     flex-direction: column;
   }

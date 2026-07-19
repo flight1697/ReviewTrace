@@ -24,6 +24,7 @@ import {
   useWorkflowRun,
   visibleWorkflowStages,
   type Finding,
+  useModelStatus,
   type WorkflowRun,
 } from "./workflow";
 
@@ -73,6 +74,7 @@ export default function Home() {
   const [sourceMode, setSourceMode] = useState<SourceMode>("live");
   const [activeTab, setActiveTab] = useState<ArtifactTab>("reviews");
   const { error, failWorkflow, requestWorkflow, run, status } = useWorkflowRun();
+  const modelStatus = useModelStatus();
 
   async function runConfiguredWorkflow() {
     if (sourceMode === "import") {
@@ -153,6 +155,8 @@ export default function Home() {
             </div>
             <span className="soft-badge">中文报告优先</span>
           </div>
+
+          {modelStatus ? <ModelStatusNotice status={modelStatus} /> : null}
 
           <form className="task-form">
             <label className="field">
@@ -267,6 +271,30 @@ export default function Home() {
         )}
       </section>
     </main>
+  );
+}
+
+function ModelStatusNotice({
+  status,
+}: {
+  status: NonNullable<ReturnType<typeof useModelStatus>>;
+}) {
+  return (
+    <div
+      className={`model-status ${status.modelDrivenAvailable ? "ready" : "fallback"}`}
+      role="status"
+      aria-label="模型配置状态"
+    >
+      <div>
+        <strong>
+          {status.modelDrivenAvailable ? "模型驱动分析已就绪" : "当前使用确定性兜底"}
+        </strong>
+        <span>{status.message}</span>
+      </div>
+      <span className="model-chip">
+        {status.provider} · {status.model}
+      </span>
+    </div>
   );
 }
 

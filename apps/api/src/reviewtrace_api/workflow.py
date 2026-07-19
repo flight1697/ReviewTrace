@@ -382,6 +382,39 @@ def configured_model_name(provider: str) -> str:
     return "gpt-5.6-sol"
 
 
+def model_configuration() -> dict[str, object]:
+    """Return safe, user-facing model configuration without exposing secrets."""
+
+    provider = os.getenv("MODEL_PROVIDER", "stub").lower()
+    model = (
+        "deterministic-import-summary"
+        if provider not in {"deepseek", "openai"}
+        else configured_model_name(provider)
+    )
+    key_name = {
+        "deepseek": "DEEPSEEK_API_KEY",
+        "openai": "OPENAI_API_KEY",
+    }.get(provider)
+    key_configured = bool(key_name and os.getenv(key_name))
+    model_driven_available = provider in {"deepseek", "openai"} and key_configured
+
+    if model_driven_available:
+        message = f"已配置 {provider} 模型，将使用模型驱动分析。"
+    elif key_name:
+        message = f"未配置 {key_name}，当前将使用确定性兜底分析。"
+    else:
+        message = "当前使用确定性兜底分析。配置支持的模型 provider 和 API key 后可启用模型分析。"
+
+    return {
+        "provider": provider,
+        "model": model,
+        "keyConfigured": key_configured,
+        "modelDrivenAvailable": model_driven_available,
+        "fallbackAvailable": True,
+        "message": message,
+    }
+
+
 def build_stub_analysis(reviews: list[dict[str, object]]) -> dict[str, object]:
     review_ids = [str(review["id"]) for review in reviews]
 

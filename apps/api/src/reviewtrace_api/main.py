@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from reviewtrace_api.config import load_local_environment
 from reviewtrace_api.workflow import WorkflowRunRequest
 from reviewtrace_api.workflow import WorkflowRunner
+from reviewtrace_api.workflow import model_configuration
 
 
 load_local_environment()
@@ -26,6 +27,11 @@ def health_check() -> dict[str, str]:
         "status": "ok",
         "service": "ReviewTrace 后端服务",
     }
+
+
+@app.get("/config/model")
+def model_config() -> dict[str, object]:
+    return model_configuration()
 
 
 @app.post("/workflow/runs")

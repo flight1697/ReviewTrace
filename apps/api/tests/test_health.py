@@ -19,6 +19,54 @@ def test_health_check_identifies_reviewtrace_api():
     }
 
 
+def test_model_status_reports_missing_provider_key_without_exposing_secret(monkeypatch):
+    monkeypatch.setenv("MODEL_PROVIDER", "deepseek")
+    monkeypatch.setenv("MODEL_NAME", "deepseek-v4-flash")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    response = TestClient(app).get("/config/model")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash",
+        "keyConfigured": False,
+        "modelDrivenAvailable": False,
+        "fallbackAvailable": True,
+        "message": "未配置 DEEPSEEK_API_KEY，当前将使用确定性兜底分析。",
+    }
+
+
+def test_model_status_reports_configured_provider_without_returning_key(monkeypatch):
+    monkeypatch.setenv("MODEL_PROVIDER", "deepseek")
+    monkeypatch.setenv("MODEL_NAME", "deepseek-v4-flash")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "secret-value")
+
+    response = TestClient(app).get("/config/model")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "deepseek"
+    assert body["model"] == "deepseek-v4-flash"
+    assert body["keyConfigured"] is True
+    assert body["modelDrivenAvailable"] is True
+    assert body["fallbackAvailable"] is True
+    assert "secret-value" not in response.text
+
+
+def test_model_status_describes_default_deterministic_analysis(monkeypatch):
+    monkeypatch.delenv("MODEL_PROVIDER", raising=False)
+    monkeypatch.delenv("MODEL_NAME", raising=False)
+
+    response = TestClient(app).get("/config/model")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "stub"
+    assert body["model"] == "deterministic-import-summary"
+    assert body["modelDrivenAvailable"] is False
+
+
 def test_workflow_runner_interface_returns_complete_fixture_run():
     runner = WorkflowRunner()
 

@@ -29,6 +29,73 @@ describe("ReviewTrace 首页", () => {
     expect(screen.getByText("测试")).toBeInTheDocument();
   });
 
+  it("在模型 key 缺失时展示确定性兜底提示", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          keyConfigured: false,
+          modelDrivenAvailable: false,
+          fallbackAvailable: true,
+          message: "未配置 DEEPSEEK_API_KEY，当前将使用确定性兜底分析。",
+        }),
+      }),
+    );
+
+    render(<Home />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("status", { name: "模型配置状态" }),
+      ).toHaveTextContent("未配置 DEEPSEEK_API_KEY");
+    });
+    expect(screen.getByText(/deepseek-v4-flash/)).toBeInTheDocument();
+  });
+
+  it("在模型状态接口不可用时展示可恢复提示", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("API offline")),
+    );
+
+    render(<Home />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("status", { name: "模型配置状态" }),
+      ).toHaveTextContent("模型配置状态暂时不可用");
+    });
+    expect(screen.getByText(/unknown · unknown/)).toBeInTheDocument();
+  });
+
+  it("在模型 key 已配置时展示模型驱动状态", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          keyConfigured: true,
+          modelDrivenAvailable: true,
+          fallbackAvailable: true,
+          message: "已配置 deepseek 模型，将使用模型驱动分析。",
+        }),
+      }),
+    );
+
+    render(<Home />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("status", { name: "模型配置状态" }),
+      ).toHaveTextContent("模型驱动分析已就绪");
+    });
+  });
+
   it("运行 App Store 工作流并展示可追溯结果", async () => {
     vi.stubGlobal(
       "fetch",

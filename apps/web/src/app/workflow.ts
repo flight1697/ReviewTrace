@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export const defaultAppStoreLink =
   "https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684";
@@ -150,6 +150,36 @@ export type WorkflowRun = {
 export type WorkflowRequestBody = Record<string, string>;
 export type WorkflowStatus = "idle" | "running" | "failed";
 
+export type ModelStatus = {
+  provider: string;
+  model: string;
+  keyConfigured: boolean;
+  modelDrivenAvailable: boolean;
+  fallbackAvailable: boolean;
+  message: string;
+};
+
+const unavailableModelStatus: ModelStatus = {
+  provider: "unknown",
+  model: "unknown",
+  keyConfigured: false,
+  modelDrivenAvailable: false,
+  fallbackAvailable: true,
+  message: "模型配置状态暂时不可用，工作流仍会按后端配置运行。",
+};
+
+export function useModelStatus() {
+  const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
+
+  useEffect(() => {
+    requestModelStatus()
+      .then(setModelStatus)
+      .catch(() => setModelStatus(unavailableModelStatus));
+  }, []);
+
+  return modelStatus;
+}
+
 export function useWorkflowRun() {
   const [run, setRun] = useState<WorkflowRun | null>(null);
   const [status, setStatus] = useState<WorkflowStatus>("idle");
@@ -206,6 +236,28 @@ export async function requestWorkflowRun(
   }
 
   return (await response.json()) as WorkflowRun;
+}
+
+export async function requestModelStatus(): Promise<ModelStatus> {
+  const response = await fetch(`${apiUrl}/config/model`);
+
+  if (!response.ok) {
+    throw new Error("模型配置状态获取失败");
+  }
+
+  const body = (await response.json()) as Partial<ModelStatus>;
+  if (
+    !body.provider ||
+    !body.model ||
+    !body.message ||
+    typeof body.keyConfigured !== "boolean" ||
+    typeof body.modelDrivenAvailable !== "boolean" ||
+    typeof body.fallbackAvailable !== "boolean"
+  ) {
+    throw new Error("模型配置状态格式无效");
+  }
+
+  return body as ModelStatus;
 }
 
 export function visibleWorkflowStages(

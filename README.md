@@ -118,6 +118,8 @@ $env:DEEPSEEK_API_KEY="你的 DeepSeek API key"
 
 本地开发时，后端会自动读取仓库根目录下的 `.env.local` 或 `.env`。不配置 `DEEPSEEK_API_KEY` 时，系统会使用明确标注的确定性兜底分析。配置 DeepSeek 后，语义 finding 会通过 DeepSeek 的 OpenAI 兼容 Chat Completions API 生成，并在结果中标记 `modelDriven: true`。
 
+前端启动时会读取 `GET /config/model`，只展示 provider、模型、是否已配置 key 以及当前分析模式，不会返回 key 内容。缺少对应 key 时，工作台会明确提示将使用确定性兜底分析。
+
 ## 工作流输出
 
 每次运行会返回并展示：
