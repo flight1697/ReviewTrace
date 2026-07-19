@@ -12,6 +12,189 @@ const modelStatusResponse = {
   message: "模型已就绪。",
 };
 
+const workflowRunResponse = {
+  runId: "import-run-001",
+  source: {
+    mode: "import",
+    label: "导入的 JSON 数据集",
+  },
+  scope: {
+    appStoreUrl: "https://apps.apple.com/us/app/example/id123456789",
+    analysisGoal: "关注订阅说明",
+    storefront: "us",
+  },
+  stages: [
+    { name: "reviews", status: "complete" },
+    { name: "cleaning", status: "complete" },
+    { name: "scope", status: "complete" },
+    { name: "analysis", status: "complete" },
+    { name: "prd", status: "complete" },
+    { name: "tests", status: "complete" },
+    { name: "validation", status: "complete" },
+  ],
+  rawReviews: [
+    {
+      id: "json-001",
+      rating: 2,
+      title: "订阅说明不清楚",
+      body: "购买前没有看懂价格和取消方式。",
+      appVersion: "1.0.0",
+      source: "import",
+      date: "2026-07-20",
+      locale: "zh-CN",
+    },
+  ],
+  reviews: [
+    {
+      id: "json-001",
+      rating: 2,
+      title: "订阅说明不清楚",
+      body: "购买前没有看懂价格和取消方式。",
+      appVersion: "1.0.0",
+      source: "import",
+      date: "2026-07-20",
+      locale: "zh-CN",
+    },
+  ],
+  cleaningSummary: {
+    inputCount: 1,
+    retainedCount: 1,
+    duplicateCount: 0,
+    discardedEmptyCount: 0,
+  },
+  ratingSummary: {
+    averageRating: 2,
+    ratingCounts: { "2": 1 },
+  },
+  analysisSummary: {
+    provider: "stub",
+    model: "deterministic-import-summary",
+    modelDriven: false,
+  },
+  analysisScope: {
+    requestedGoal: "关注订阅说明",
+    focusSummary: "订阅说明需要在购买前更清楚地解释。",
+    focusAreas: ["订阅说明"],
+    dataSignals: ["低评分评论明确提到价格和取消方式"],
+    constraints: ["仅覆盖导入数据"],
+    uncertaintyNotes: [],
+    scopeReviewIds: ["json-001"],
+    selectionSummary: "清洗后只有 1 条评论，系统保留全部评论以避免过度过滤。",
+    filteringRules: ["保留全部评论"],
+    excludedReviewIds: [],
+  },
+  stageReports: [
+    {
+      name: "reviews",
+      status: "complete",
+      summary: "收集到 1 条原始评论，清洗后保留 1 条。",
+      details: ["原始评论数：1", "保留评论数：1"],
+      revisions: [],
+      errors: [],
+    },
+  ],
+  findings: [
+    {
+      id: "finding-subscription-copy",
+      title: "订阅说明需要在购买前更清楚地解释。",
+      reviewIds: ["json-001"],
+      sampleCount: 1,
+      confidence: "高",
+      method: "stub:deterministic-import-summary",
+      evidence: [
+        {
+          reviewId: "json-001",
+          excerpt: "订阅说明不清楚：购买前没有看懂价格和取消方式。",
+        },
+      ],
+      conflictingEvidence: [],
+    },
+  ],
+  requirements: [
+    {
+      id: "requirement-subscription-copy",
+      title: "购买前展示价格、套餐内容和取消方式。",
+      priority: "P0",
+      version: "v1",
+      findingIds: ["finding-subscription-copy"],
+      sourceReviewIds: ["json-001"],
+      boundaries: ["不改动支付供应商流程"],
+      assumption: false,
+      acceptanceCriteria: ["订阅确认前显式展示价格和取消方式。"],
+    },
+  ],
+  versionPlan: {
+    versions: [
+      {
+        id: "v1",
+        name: "版本 1：证据支撑的核心改进",
+        goal: "优先交付订阅说明修复。",
+        requirementIds: ["requirement-subscription-copy"],
+        sourceReviewIds: ["json-001"],
+      },
+    ],
+  },
+  prd: {
+    title: "ReviewTrace 产品需求文档草案",
+    objective: "围绕「关注订阅说明」回应已导入评论中的高证据问题。",
+    scopeSummary: {
+      requestedGoal: "关注订阅说明",
+      focusSummary: "订阅说明需要在购买前更清楚地解释。",
+      focusAreas: ["订阅说明"],
+      dataSignals: ["低评分评论明确提到价格和取消方式"],
+      constraints: ["仅覆盖导入数据"],
+      uncertaintyNotes: [],
+      scopeReviewIds: ["json-001"],
+      selectionSummary: "清洗后只有 1 条评论，系统保留全部评论以避免过度过滤。",
+      filteringRules: ["保留全部评论"],
+      excludedReviewIds: [],
+    },
+    versions: [
+      {
+        id: "v1",
+        name: "版本 1：证据支撑的核心改进",
+        goal: "优先交付订阅说明修复。",
+        requirementIds: ["requirement-subscription-copy"],
+        sourceReviewIds: ["json-001"],
+      },
+    ],
+    requirements: [
+      {
+        id: "requirement-subscription-copy",
+        title: "购买前展示价格、套餐内容和取消方式。",
+        priority: "P0",
+        version: "v1",
+        findingIds: ["finding-subscription-copy"],
+        sourceReviewIds: ["json-001"],
+        boundaries: ["不改动支付供应商流程"],
+        assumption: false,
+        acceptanceCriteria: ["订阅确认前显式展示价格和取消方式。"],
+      },
+    ],
+    successMetrics: ["每条需求都能追溯到至少一条原始评论。"],
+    assumptions: [],
+  },
+  testCases: [
+    {
+      id: "test-subscription-copy",
+      title: "验证：购买前展示价格、套餐内容和取消方式。",
+      requirementId: "requirement-subscription-copy",
+      sourceReviewIds: ["json-001"],
+      steps: ["打开订阅确认页。", "核对价格、套餐内容和取消方式。"],
+      expectedResult: "源评论 json-001 指出的问题被直接回应。",
+      verificationPoints: ["订阅确认前显式展示价格和取消方式。"],
+    },
+  ],
+  dataLimitations: [],
+  traceabilityValidation: {
+    status: "passed",
+    unsupportedFindingIds: [],
+    unsupportedRequirementIds: [],
+    unsupportedTestCaseIds: [],
+  },
+  validationMessages: ["导入数据已完成结构化。"],
+};
+
 describe("ReviewTrace 工作台", () => {
   beforeEach(() => {
     vi.stubGlobal(
@@ -123,5 +306,62 @@ describe("ReviewTrace 工作台", () => {
       screen.getByRole("heading", { name: "评论 → 发现 → 需求 → 测试用例" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /VAL-001/ })).toBeInTheDocument();
+  });
+
+  it("启动真实运行后各交付物页面使用后端运行数据", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+
+      if (url.endsWith("/config/model")) {
+        return {
+          ok: true,
+          json: async () => modelStatusResponse,
+        } as Response;
+      }
+
+      if (url.endsWith("/workflow/runs/stream")) {
+        return {
+          ok: true,
+          json: async () => workflowRunResponse,
+        } as Response;
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    render(<Home />);
+
+    fireEvent.click(screen.getByRole("button", { name: /开始分析/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("import-run-001")).toBeInTheDocument();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "评论原始与清洗后的评论语料",
+      }),
+    );
+    expect(screen.getByRole("button", { name: "json-001" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "REV-00421" })).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /主题图谱/,
+      }),
+    );
+    expect(screen.getAllByRole("button", { name: /finding-subscription-copy/ }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /FND-003/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "PRD v1结构化需求与文档草案" }));
+    expect(
+      screen.getByRole("button", { name: /requirement-subscription-copy/ }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "测试套件可追溯测试套件" }));
+    expect(screen.getByRole("button", { name: /test-subscription-copy/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "追溯矩阵追溯矩阵与关系图" }));
+    expect(screen.getByRole("button", { name: /发现与评论链路已完成追溯/ })).toBeInTheDocument();
   });
 });

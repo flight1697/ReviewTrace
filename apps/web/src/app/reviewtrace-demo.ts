@@ -22,7 +22,7 @@ export type DemoReviewRow = {
   sentiment: "正向" | "混合" | "负向";
   duplicateOf?: string;
   evidenceUsed: string;
-  source: "示例" | "缓存" | "实时";
+  source: "示例" | "缓存" | "实时" | "导入";
 };
 
 export type DemoThemeCard = {

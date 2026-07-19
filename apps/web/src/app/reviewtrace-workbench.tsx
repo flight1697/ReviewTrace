@@ -54,6 +54,12 @@ import {
   useModelStatus,
   useWorkflowRun,
   visibleWorkflowStages,
+  type Finding,
+  type Requirement,
+  type Review,
+  type StageReport,
+  type TestCase,
+  type WorkflowRun,
 } from "./workflow";
 import {
   demoApp,
@@ -71,8 +77,13 @@ import {
   demoValidationIssues,
   schemaExampleCsv,
   schemaExampleJson,
+  type DemoFindingCard,
   type DemoInspectorKind,
+  type DemoRequirementCard,
   type DemoReviewRow,
+  type DemoTestCase,
+  type DemoThemeCard,
+  type DemoValidationIssue,
   type DemoView,
 } from "./reviewtrace-demo";
 
@@ -170,6 +181,330 @@ function validationStatusClass(status: string) {
   return "broken";
 }
 
+function buildRunReviewRows(run: WorkflowRun, reviews: Review[]): DemoReviewRow[] {
+  const findingByReviewId = new Map<string, Finding>();
+  for (const finding of run.findings) {
+    for (const reviewId of finding.reviewIds) {
+      if (!findingByReviewId.has(reviewId)) {
+        findingByReviewId.set(reviewId, finding);
+      }
+    }
+  }
+
+  return reviews.map((review) => {
+    const finding = findingByReviewId.get(review.id);
+    const body = [review.title, review.body].filter(Boolean).join("：");
+
+    return {
+      id: review.id,
+      rating: review.rating,
+      date: review.date || "未提供",
+      version: review.appVersion || "未提供",
+      locale: review.locale || run.scope.storefront || "未提供",
+      excerpt: body || review.body || review.title || "未提供",
+      theme: finding?.title || "综合反馈",
+      sentiment: review.rating <= 2 ? "负向" : review.rating === 3 ? "混合" : "正向",
+      evidenceUsed: finding ? `用于 ${finding.id}` : "原始评论",
+      source: sourceModeLabel(run.source.mode),
+    };
+  });
+}
+
+function buildRunThemeCards(run: WorkflowRun): DemoThemeCard[] {
+  if (!run.findings.length) {
+    return [];
+  }
+
+  const reviewsById = new Map(run.reviews.map((review) => [review.id, review]));
+
+  return run.findings.map((finding, index) => {
+    const sourceReviews = finding.reviewIds
+      .map((reviewId) => reviewsById.get(reviewId))
+      .filter((review): review is Review => Boolean(review));
+    const averageRating = sourceReviews.length
+      ? sourceReviews.reduce((sum, review) => sum + review.rating, 0) / sourceReviews.length
+      : 0;
+    const languages = uniqueNonEmpty(
+      sourceReviews.map((review) => review.locale || run.scope.storefront || ""),
+    );
+    const versions = uniqueNonEmpty(sourceReviews.map((review) => review.appVersion || ""));
+
+    return {
+      id: finding.id,
+      name: finding.title,
+      summary: finding.evidence[0]?.excerpt || finding.title,
+      reviews: finding.reviewIds.length,
+      share: run.reviews.length
+        ? `${Math.round((finding.reviewIds.length / run.reviews.length) * 100)}%`
+        : "0%",
+      avgRating: averageRating ? averageRating.toFixed(1) : "0.0",
+      confidence: normalizeConfidence(finding.confidence),
+      trend: index === 0 ? "当前重点" : "关联主题",
+      conflicts: finding.conflictingEvidence.length,
+      versions: versions.length ? versions : [run.scope.storefront],
+      languages: languages.length ? languages : [run.scope.storefront],
+      spark: buildSparkline(run.findings.length, index, finding.reviewIds.length),
+    };
+  });
+}
+
+function buildRunFindingCards(run: WorkflowRun): DemoFindingCard[] {
+  return run.findings.map((finding) => ({
+    id: finding.id,
+    title: finding.title,
+    severity: severityLabel(finding.sampleCount, finding.conflictingEvidence.length),
+    confidence: normalizeConfidence(finding.confidence),
+    sampleCount: finding.sampleCount,
+    supportingReviews: finding.reviewIds,
+    stats: `${finding.sampleCount} 条评论 · ${finding.method}`,
+    synthesis: finding.evidence[0]?.excerpt || "后端工作流生成的发现。",
+    contradictingEvidence: finding.conflictingEvidence.map(
+      (item) => `${item.reviewId}：${item.excerpt}`,
+    ),
+    limitation:
+      finding.conflictingEvidence.length > 0
+        ? "存在冲突证据，仍需要继续审查。"
+        : "当前发现已绑定到原始评论证据。",
+    assumption: finding.confidence === "低",
+  }));
+}
+
+function buildRunRequirements(run: WorkflowRun): DemoRequirementCard[] {
+  return run.requirements.map((requirement) => ({
+    id: requirement.id,
+    statement: requirement.title,
+    priority: requirement.priority as "P0" | "P1" | "P2",
+    targetRelease: requirement.version,
+    sourceFindings: requirement.findingIds,
+    sourceReviews: requirement.sourceReviewIds,
+    acceptanceCriteria: requirement.acceptanceCriteria ?? [],
+    confidence: normalizeConfidenceFromPriority(requirement.priority),
+    assumption: requirement.assumption,
+    status: requirement.assumption ? "证据不足" : "已验证",
+  }));
+}
+
+function buildRunTestCases(run: WorkflowRun): DemoTestCase[] {
+  const requirementById = new Map(run.requirements.map((requirement) => [requirement.id, requirement]));
+
+  return run.testCases.map((testCase) => {
+    const requirement = requirementById.get(testCase.requirementId);
+
+    return {
+      id: testCase.id,
+      title: testCase.title,
+      type: "功能",
+      priority: requirement?.priority || "P2",
+      requirementId: testCase.requirementId,
+      sourceReviews: testCase.sourceReviewIds,
+      preconditions: [
+        `关联需求 ${testCase.requirementId}`,
+        `来源评论 ${testCase.sourceReviewIds.join(", ")}`,
+      ],
+      steps: testCase.steps,
+      expected: testCase.expectedResult,
+      edgeCases: testCase.verificationPoints?.length
+        ? testCase.verificationPoints
+        : ["暂无额外边界"],
+      why: requirement
+        ? `由需求 ${requirement.id} 自动生成，保持对原始评论的可追溯。`
+        : "由后端工作流自动生成。",
+    };
+  });
+}
+
+function buildRunValidationIssues(run: WorkflowRun): DemoValidationIssue[] {
+  const issues: DemoValidationIssue[] = [];
+
+  if (run.traceabilityValidation.unsupportedFindingIds.length === 0) {
+    issues.push({
+      id: "VAL-001",
+      title: "发现与评论链路已完成追溯",
+      status: "有效",
+      path: "评论 → 发现",
+      reviewCount: run.reviews.length,
+      note: "所有发现都已绑定到有效评论证据。",
+      action: "保持当前范围",
+    });
+  } else {
+    issues.push({
+      id: "VAL-001",
+      title: "部分发现未通过追溯校验",
+      status: "断链",
+      path: "评论 → 发现",
+      reviewCount: run.traceabilityValidation.unsupportedFindingIds.length,
+      note: run.traceabilityValidation.unsupportedFindingIds.join("、"),
+      action: "补充或移除这些发现",
+    });
+  }
+
+  if (run.traceabilityValidation.unsupportedRequirementIds.length) {
+    issues.push({
+      id: "VAL-002",
+      title: "部分需求缺少完整来源链",
+      status: "警告",
+      path: "发现 → 需求",
+      reviewCount: run.traceabilityValidation.unsupportedRequirementIds.length,
+      note: run.traceabilityValidation.unsupportedRequirementIds.join("、"),
+      action: "补强需求证据",
+    });
+  }
+
+  if (run.traceabilityValidation.unsupportedTestCaseIds.length) {
+    issues.push({
+      id: "VAL-003",
+      title: "部分测试用例未通过追溯校验",
+      status: "警告",
+      path: "需求 → 测试",
+      reviewCount: run.traceabilityValidation.unsupportedTestCaseIds.length,
+      note: run.traceabilityValidation.unsupportedTestCaseIds.join("、"),
+      action: "修正测试来源链",
+    });
+  }
+
+  return issues;
+}
+
+function buildRunOverview(run: WorkflowRun) {
+  const reviewedVersions = uniqueNonEmpty(run.requirements.map((requirement) => requirement.version));
+  const supportedRequirements = run.requirements.filter((requirement) => !requirement.assumption);
+  const unsupportedCount = run.traceabilityValidation.unsupportedFindingIds.length +
+    run.traceabilityValidation.unsupportedRequirementIds.length +
+    run.traceabilityValidation.unsupportedTestCaseIds.length;
+
+  return {
+    summary: {
+      strongest:
+        run.findings[0]?.title || "当前运行没有生成新的发现。",
+      uncertain:
+        run.traceabilityValidation.status === "passed"
+          ? "当前追溯链路没有明显断点。"
+          : "仍有需要修补的追溯断点。",
+      buildV1: supportedRequirements.length
+        ? `优先交付 ${supportedRequirements[0].title}`
+        : "等待更多证据后再生成版本 1。",
+      defer:
+        run.requirements.length > supportedRequirements.length
+          ? "证据不足的需求先放入后续版本。"
+          : "当前版本计划没有明显需要延后项。",
+    },
+    versionPlan: run.versionPlan.versions.map((version, index) => ({
+      label: version.id,
+      note: version.goal,
+      count: version.requirementIds.length || index + 1,
+    })),
+    deliverables: [
+      "清洗数据集",
+      "主题报告",
+      "发现",
+      "PRD",
+      "测试套件",
+      "追溯报告",
+    ],
+    coverage: unsupportedCount === 0 ? "100%" : `${Math.max(0, 100 - unsupportedCount * 7)}%`,
+    runId: run.runId,
+    source: run.source.label,
+  };
+}
+
+function buildRunSummaryMetrics(run: WorkflowRun) {
+  const languages = uniqueNonEmpty(run.reviews.map((review) => review.locale || ""));
+  return [
+    {
+      label: "已收集评论",
+      value: String(run.rawReviews.length),
+      hint: `${run.source.label} · ${run.rawReviews.length - run.reviews.length} 条被清洗或去重`,
+    },
+    {
+      label: "清洗后评论",
+      value: String(run.reviews.length),
+      hint: `移除 ${run.cleaningSummary.duplicateCount + run.cleaningSummary.discardedEmptyCount} 条`,
+    },
+    {
+      label: "已去重",
+      value: String(run.cleaningSummary.duplicateCount),
+      hint: "基于标题与正文归一化指纹",
+    },
+    {
+      label: "识别语言",
+      value: String(languages.length || 1),
+      hint: languages.length ? languages.join(" · ") : run.scope.storefront,
+    },
+    {
+      label: "模型发现",
+      value: String(run.findings.length),
+      hint: `${run.analysisSummary.provider} · ${run.analysisSummary.model}`,
+    },
+    {
+      label: "验证问题",
+      value: String(
+        run.traceabilityValidation.unsupportedFindingIds.length +
+          run.traceabilityValidation.unsupportedRequirementIds.length +
+          run.traceabilityValidation.unsupportedTestCaseIds.length,
+      ),
+      hint:
+        run.traceabilityValidation.status === "passed"
+          ? "当前追溯链路完整"
+          : "仍有断链需要处理",
+    },
+  ];
+}
+
+function sourceModeLabel(mode: string): DemoReviewRow["source"] {
+  if (mode === "live") return "实时";
+  if (mode === "fixture") return "缓存";
+  if (mode === "import") return "导入";
+  return "示例";
+}
+
+function uniqueNonEmpty(values: string[]) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function normalizeConfidence(value: string): "高" | "中" | "低" {
+  if (value === "高" || value === "中" || value === "低") {
+    return value;
+  }
+
+  if (value.includes("high")) return "高";
+  if (value.includes("low")) return "低";
+  return "中";
+}
+
+function normalizeConfidenceFromPriority(priority: string): "高" | "中" | "低" {
+  if (priority === "P0") return "高";
+  if (priority === "P1") return "中";
+  return "低";
+}
+
+function severityLabel(sampleCount: number, conflictCount: number) {
+  if (sampleCount >= 4 && conflictCount === 0) return "高";
+  if (sampleCount >= 2) return "中";
+  return "低";
+}
+
+function buildSparkline(seriesLength: number, index: number, sampleCount: number) {
+  const base = Math.max(3, sampleCount);
+  return Array.from({ length: 7 }, (_, position) =>
+    Math.max(1, base + (position === index % 7 ? 3 : 0) - Math.abs(position - index)),
+  );
+}
+
+function workflowStageIdForNav(navId: string) {
+  const stageIds: Record<string, string> = {
+    analyze: "analysis",
+    clean: "cleaning",
+    collect: "reviews",
+    evidence: "analysis",
+    prd: "prd",
+    scope: "scope",
+    tests: "tests",
+    validate: "validation",
+  };
+
+  return stageIds[navId] ?? navId;
+}
+
 export default function ReviewTraceWorkbench() {
   const [activeView, setActiveView] = useState<DemoView>("new");
   const [activeInspector, setActiveInspector] = useState<InspectorSelection>(
@@ -202,7 +537,15 @@ export default function ReviewTraceWorkbench() {
       : demoStages.map((stage) => [stage.label, stageLabel(stage.status)]);
 
   const currentRunStatus =
-    status === "running" ? "运行中" : run ? "已验证" : status === "failed" ? "需要关注" : "演示就绪";
+    status === "running"
+      ? "运行中"
+      : run
+        ? run.traceabilityValidation.status === "passed"
+          ? "已验证"
+          : "需要关注"
+        : status === "failed"
+          ? "需要关注"
+          : "演示就绪";
 
   const currentSource =
     run?.source.label ??
@@ -214,9 +557,50 @@ export default function ReviewTraceWorkbench() {
 
   const currentRunId = run?.runId ?? demoApp.runId;
   const currentProvider =
-    modelStatus?.provider && modelStatus?.model
+    run
+      ? `${run.analysisSummary.provider} · ${run.analysisSummary.model}`
+      : modelStatus?.provider && modelStatus?.model
       ? `${modelStatus.provider} · ${modelStatus.model}`
       : demoApp.provider;
+  const rawReviewRows = useMemo(
+    () => (run ? buildRunReviewRows(run, run.rawReviews) : demoReviewRows),
+    [run],
+  );
+  const cleanReviewRows = useMemo(
+    () => (run ? buildRunReviewRows(run, run.reviews) : demoReviewRows.filter((row) => !row.duplicateOf)),
+    [run],
+  );
+  const themeCards = useMemo(
+    () => (run ? buildRunThemeCards(run) : demoThemeCards),
+    [run],
+  );
+  const findingCards = useMemo(
+    () => (run ? buildRunFindingCards(run) : demoFindingCards),
+    [run],
+  );
+  const requirementCards = useMemo(
+    () => (run ? buildRunRequirements(run) : demoRequirements),
+    [run],
+  );
+  const testCaseCards = useMemo(
+    () => (run ? buildRunTestCases(run) : demoTestCases),
+    [run],
+  );
+  const validationIssues = useMemo(
+    () => (run ? buildRunValidationIssues(run) : demoValidationIssues),
+    [run],
+  );
+  const overview = useMemo(
+    () => (run ? buildRunOverview(run) : demoOverview),
+    [run],
+  );
+  const summaryMetrics = useMemo(
+    () => (run ? buildRunSummaryMetrics(run) : demoSummaryMetrics),
+    [run],
+  );
+  const effectiveStageReports = stageReports.length
+    ? stageReports
+    : run?.stageReports ?? [];
 
   useEffect(() => {
     setValidationAttempted(false);
@@ -550,7 +934,7 @@ export default function ReviewTraceWorkbench() {
 
   function renderRunWorkspace() {
     const progressCopy = run
-      ? "8 个阶段已完成 4 个 · 已用时 02:18。流程会如实展示限制、重试和仍需证据的内容。"
+      ? `${run.stages.filter((stage) => stage.status === "complete").length} 个阶段已完成。流程会如实展示限制、重试和仍需证据的内容。`
       : "演示工作台 · 当前未启动真实运行。点击开始分析后将显示实时阶段状态与证据。";
 
     return (
@@ -570,13 +954,7 @@ export default function ReviewTraceWorkbench() {
         </div>
 
         <div className="rt-inline-metrics rt-inline-metrics--clickable">
-          {run != null ? demoSummaryMetrics.map((metric) => (
-            <button key={metric.label} className="rt-metric" type="button" onClick={() => setActiveInspector({ kind: "run_health" })}>
-              <span>{metric.label}</span>
-              <strong>{metric.value}</strong>
-              <small>{metric.hint}</small>
-            </button>
-          )) : demoSummaryMetrics.map((metric) => (
+          {summaryMetrics.map((metric) => (
             <button key={metric.label} className="rt-metric" type="button" onClick={() => setActiveInspector({ kind: "run_health" })}>
               <span>{metric.label}</span>
               <strong>{metric.value}</strong>
@@ -596,33 +974,37 @@ export default function ReviewTraceWorkbench() {
           <div className="rt-trace-list">
             {currentStages.map(([name, stageStatus], index) => {
               const demoStage = demoStages[index];
+              const report = effectiveStageReports[index];
+              const rawStatus = run?.stages[index]?.status ?? demoStage?.status ?? "pending";
+              const summary = report?.summary ?? demoStage?.summary ?? "等待中";
+              const details = report?.details ?? [demoStage?.input ?? "—", demoStage?.output ?? "—"];
               return (
-                <details key={name} className={`rt-trace-row ${demoStage?.status === "running" ? "is-running" : ""}`} open={index < 2}>
+                <details key={name} className={`rt-trace-row ${rawStatus === "running" ? "is-running" : ""}`} open={index < 2}>
                   <summary className="rt-trace-row__summary" onClick={() => setActiveInspector({ kind: "run_health" })}>
-                    <span className={`rt-status-dot rt-status-dot--${demoStage?.status ?? "pending"}`}>{stageIcon(demoStage?.status ?? "pending")}</span>
+                    <span className={`rt-status-dot rt-status-dot--${rawStatus}`}>{stageIcon(rawStatus)}</span>
                     <span className="rt-trace-row__main">
                       <strong>{name}</strong>
-                      <span>{demoStage?.method ?? "确定性"} · {demoStage?.summary ?? "等待中"}</span>
+                      <span>{demoStage?.method ?? "确定性"} · {summary}</span>
                     </span>
                     <span className="rt-trace-row__meta">
                       <small>{stageStatus}</small>
                       <small>{demoStage?.duration ?? "—"}</small>
                     </span>
                     <span className="rt-trace-row__meta rt-trace-row__meta--narrow">
-                      <small>{demoStage?.input ?? "—"}</small>
-                      <small>{demoStage?.output ?? "—"}</small>
+                      <small>{details[0] ?? "—"}</small>
+                      <small>{details[1] ?? "—"}</small>
                       <small>{demoStage?.tokens ?? "—"} token</small>
                     </span>
                   </summary>
                   <div className="rt-trace-row__body">
                     <div>
                       <span className="rt-mini-label">摘要</span>
-                      <p>{demoStage?.summary}</p>
+                      <p>{summary}</p>
                     </div>
                     <div className="rt-trace-grid">
-                      <div><strong>输入</strong><span>{demoStage?.input}</span></div>
-                      <div><strong>输出</strong><span>{demoStage?.output}</span></div>
-                      <div><strong>警告</strong><span>{demoStage?.badge}</span></div>
+                      <div><strong>输入</strong><span>{details[0] ?? "—"}</span></div>
+                      <div><strong>输出</strong><span>{details[1] ?? "—"}</span></div>
+                      <div><strong>警告</strong><span>{report?.errors?.join("；") || demoStage?.badge}</span></div>
                       <div><strong>Token</strong><span>{demoStage?.tokens}</span></div>
                     </div>
                   </div>
@@ -638,10 +1020,10 @@ export default function ReviewTraceWorkbench() {
               <p className="rt-kicker">阶段报告</p>
               <h2>每条报告都保留修订、失败与说明</h2>
             </div>
-            <span className="rt-pill">{stageReports.length || demoStages.length} 条报告</span>
+            <span className="rt-pill">{effectiveStageReports.length || demoStages.length} 条报告</span>
           </div>
           <div className="rt-report-grid">
-            {(stageReports.length ? stageReports : demoStages.slice(0, 4).map((stage, index) => ({
+            {(effectiveStageReports.length ? effectiveStageReports : demoStages.slice(0, 4).map((stage, index) => ({
               name: stage.id,
               status: stage.status,
               summary: stage.summary,
@@ -683,14 +1065,18 @@ export default function ReviewTraceWorkbench() {
   }
 
   function renderReviews() {
-    const rows = reviewTab === "raw" ? demoReviewRows : demoReviewRows.filter((row) => !row.duplicateOf);
+    const rows = reviewTab === "raw" ? rawReviewRows : cleanReviewRows;
+    const leadCopy = run
+      ? `${run.rawReviews.length} 条原始 → ${run.reviews.length} 条清洗后。可搜索、筛选并在右侧检查器中打开任一行。`
+      : "1,284 条原始 → 1,182 条清洗后。可搜索、筛选并在右侧检查器中打开任一行。";
+
     return (
       <div className="rt-page">
         <div className="rt-page__lead">
           <div>
               <p className="rt-kicker">评论语料</p>
               <h1>原始评论与清洗评论</h1>
-              <p className="rt-lead">1,284 条原始 → 1,182 条清洗后。可搜索、筛选并在右侧检查器中打开任一行。</p>
+              <p className="rt-lead">{leadCopy}</p>
           </div>
           <div className="rt-tabs">
             <button className={`rt-tab ${reviewTab === "raw" ? "is-active" : ""}`} type="button" onClick={() => setReviewTab("raw")}>原始评论</button>
@@ -752,7 +1138,7 @@ export default function ReviewTraceWorkbench() {
             <span className="rt-pill">点击任一行</span>
           </div>
           <div className="rt-review-detail">
-            {renderReviewSummary(rows[0])}
+            {rows[0] ? renderReviewSummary(rows[0]) : <p className="rt-note">当前运行没有可展示评论。</p>}
           </div>
         </section>
       </div>
@@ -760,7 +1146,7 @@ export default function ReviewTraceWorkbench() {
   }
 
   function renderFindings() {
-    const activeTheme = demoThemeCards[0];
+    const activeTheme = themeCards[0];
     return (
       <div className="rt-page">
         <div className="rt-page__lead">
@@ -785,7 +1171,7 @@ export default function ReviewTraceWorkbench() {
               <span className="rt-pill">高 / 中 / 低</span>
             </div>
             <div className="rt-theme-list">
-              {demoThemeCards.map((theme) => (
+              {themeCards.map((theme) => (
                 <button
                   key={theme.id}
                   className="rt-theme-card"
@@ -812,6 +1198,7 @@ export default function ReviewTraceWorkbench() {
                   </div>
                 </button>
               ))}
+              {themeCards.length === 0 ? <p className="rt-note">当前运行没有生成主题卡。</p> : null}
             </div>
           </section>
 
@@ -824,7 +1211,7 @@ export default function ReviewTraceWorkbench() {
               <span className="rt-pill">提升为需求</span>
             </div>
             <div className="rt-finding-list">
-              {demoFindingCards.map((finding) => (
+              {findingCards.map((finding) => (
                 <button
                   key={finding.id}
                   className={`rt-finding-card ${finding.assumption ? "is-assumption" : ""}`}
@@ -845,6 +1232,7 @@ export default function ReviewTraceWorkbench() {
                   </div>
                 </button>
               ))}
+              {findingCards.length === 0 ? <p className="rt-note">当前运行没有生成发现。</p> : null}
             </div>
           </section>
         </div>
@@ -857,43 +1245,54 @@ export default function ReviewTraceWorkbench() {
             </div>
               <span className="rt-pill">代表性摘录</span>
           </div>
-          <div className="rt-theme-trend">
-            <div className="rt-trend-chart">
-              {activeTheme.spark.map((value, index) => (
-                <span key={index} style={{ height: `${value * 16}px` }} />
-              ))}
-            </div>
-            <div className="rt-trend-copy">
-              <strong>{activeTheme.name}</strong>
-              <p>{activeTheme.summary}</p>
-              <ul>
-                {demoReviewRows.slice(0, 3).map((row) => (
-                  <li key={row.id}>
-                    <button type="button" className="rt-link-button" onClick={() => setActiveInspector({ kind: "review", id: row.id })}>
-                      {row.id}
-                    </button>
-                    <span>{row.excerpt}</span>
-                  </li>
+          {activeTheme ? (
+            <div className="rt-theme-trend">
+              <div className="rt-trend-chart">
+                {activeTheme.spark.map((value, index) => (
+                  <span key={index} style={{ height: `${value * 16}px` }} />
                 ))}
-              </ul>
+              </div>
+              <div className="rt-trend-copy">
+                <strong>{activeTheme.name}</strong>
+                <p>{activeTheme.summary}</p>
+                <ul>
+                  {rawReviewRows.slice(0, 3).map((row) => (
+                    <li key={row.id}>
+                      <button type="button" className="rt-link-button" onClick={() => setActiveInspector({ kind: "review", id: row.id })}>
+                        {row.id}
+                      </button>
+                      <span>{row.excerpt}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
-          </div>
+          ) : (
+            <p className="rt-note">暂无代表性摘录。</p>
+          )}
         </section>
       </div>
     );
   }
 
   function renderPrd() {
+    const prd = run?.prd;
+    const coverage = run
+      ? run.traceabilityValidation.status === "passed"
+        ? "100%"
+        : "需修复"
+      : "91%";
+
     return (
       <div className="rt-page">
         <div className="rt-page__lead">
           <div>
             <p className="rt-kicker">PRD 编辑器</p>
-            <h1>PRD v1 草案</h1>
+            <h1>{prd?.title ?? "PRD v1 草案"}</h1>
             <p className="rt-lead">由已验证发现生成，并保持可追溯到评论。</p>
           </div>
           <div className="rt-lead__status">
-            <span className="rt-badge rt-badge--success">证据覆盖率 91%</span>
+            <span className="rt-badge rt-badge--success">证据覆盖率 {coverage}</span>
             <div className="rt-inline-actions">
               <button className="rt-button rt-button--ghost" type="button"><FileDown size={16} /> 导出 Markdown</button>
               <button className="rt-button rt-button--ghost" type="button"><Download size={16} /> 导出 JSON</button>
@@ -926,24 +1325,28 @@ export default function ReviewTraceWorkbench() {
             <article className="rt-prd-doc">
               <section>
                 <strong>总览</strong>
-                <p>ReviewTrace 会把应用评论转化为有证据链支撑的产品计划和可追溯测试套件。</p>
+                <p>{prd?.objective ?? "ReviewTrace 会把应用评论转化为有证据链支撑的产品计划和可追溯测试套件。"}</p>
               </section>
               <section>
                 <strong>问题陈述</strong>
-                <textarea className="rt-textarea" defaultValue="用户在被推到付费前，并不清楚订阅价值和取消路径。" />
+                <textarea
+                  key={run?.runId ?? "demo-prd-problem"}
+                  className="rt-textarea"
+                  defaultValue={run?.analysisScope?.focusSummary ?? "用户在被推到付费前，并不清楚订阅价值和取消路径。"}
+                />
               </section>
               <section>
                 <strong>目标</strong>
-                <p>提升清晰度，减少意外，并让每条需求都能追溯到评论证据。</p>
+                <p>{prd?.successMetrics?.join("；") ?? "提升清晰度，减少意外，并让每条需求都能追溯到评论证据。"}</p>
               </section>
               <section>
                 <strong>非目标</strong>
-                <p>不要声称不存在的证据。没有显式标记时，不要把假设当成已验证事实。</p>
+                <p>{run?.dataLimitations.join("；") || "不要声称不存在的证据。没有显式标记时，不要把假设当成已验证事实。"}</p>
               </section>
               <section>
                 <strong>版本计划</strong>
                 <div className="rt-plan-row">
-                  {demoOverview.versionPlan.map((item) => (
+                  {overview.versionPlan.map((item) => (
                     <div key={item.label} className="rt-plan-card">
                       <strong>{item.label}</strong>
                       <span>{item.note}</span>
@@ -961,10 +1364,10 @@ export default function ReviewTraceWorkbench() {
                 <p className="rt-kicker">需求</p>
                 <h2>结构化需求在可编辑的同时保留来源链</h2>
               </div>
-              <span className="rt-pill">REQ-004</span>
+              <span className="rt-pill">{requirementCards[0]?.id ?? "暂无需求"}</span>
             </div>
             <div className="rt-requirement-list">
-              {demoRequirements.map((requirement) => (
+              {requirementCards.map((requirement) => (
                 <button
                   key={requirement.id}
                   className={`rt-requirement-card ${requirement.assumption ? "is-assumption" : ""}`}
@@ -986,6 +1389,7 @@ export default function ReviewTraceWorkbench() {
                   </ul>
                 </button>
               ))}
+              {requirementCards.length === 0 ? <p className="rt-note">当前运行没有生成需求。</p> : null}
             </div>
           </section>
         </div>
@@ -994,14 +1398,21 @@ export default function ReviewTraceWorkbench() {
   }
 
   function renderTests() {
-    const selected = demoTestCases[0];
+    const selected = testCaseCards.find(
+      (testCase) => activeInspector.kind === "test_case" && testCase.id === activeInspector.id,
+    ) ?? testCaseCards[0];
+    const coveredRequirementCount = new Set(testCaseCards.map((testCase) => testCase.requirementId)).size;
+    const testLead = run
+      ? `${testCaseCards.length} 个测试用例 · 覆盖 ${coveredRequirementCount} 条需求 · 证据关联测试 ${run.traceabilityValidation.unsupportedTestCaseIds.length ? "需修复" : "100%"}。`
+      : "28 个测试用例 · 覆盖 12 条需求 · 证据关联测试 100%。";
+
     return (
       <div className="rt-page">
         <div className="rt-page__lead">
           <div>
             <p className="rt-kicker">测试用例</p>
             <h1>可追溯测试套件</h1>
-            <p className="rt-lead">28 个测试用例 · 覆盖 12 条需求 · 证据关联测试 100%。</p>
+            <p className="rt-lead">{testLead}</p>
           </div>
           <div className="rt-lead__status">
             <span className="rt-badge rt-badge--success">覆盖率 92%</span>
@@ -1023,7 +1434,7 @@ export default function ReviewTraceWorkbench() {
               </tr>
             </thead>
             <tbody>
-              {demoTestCases.map((testCase) => (
+              {testCaseCards.map((testCase) => (
                 <tr key={testCase.id} className="rt-table-row">
                   <td>
                     <button className="rt-link-button" type="button" onClick={() => setActiveInspector({ kind: "test_case", id: testCase.id })}>{testCase.id}</button>
@@ -1038,6 +1449,7 @@ export default function ReviewTraceWorkbench() {
               ))}
             </tbody>
           </table>
+          {testCaseCards.length === 0 ? <p className="rt-note">当前运行没有生成测试用例。</p> : null}
         </section>
 
         <section className="rt-card rt-card--surface">
@@ -1046,24 +1458,41 @@ export default function ReviewTraceWorkbench() {
               <p className="rt-kicker">详情视图</p>
               <h2>这个测试为什么存在</h2>
             </div>
-            <span className="rt-pill">{selected.id}</span>
+            <span className="rt-pill">{selected?.id ?? "暂无测试"}</span>
           </div>
-          <article className="rt-detail-panel">
-            <strong>{selected.title}</strong>
-            <p>{selected.why}</p>
-            <div className="rt-detail-grid">
-              <div><span>前置条件</span><ul>{selected.preconditions.map((item) => <li key={item}>{item}</li>)}</ul></div>
-              <div><span>步骤</span><ol>{selected.steps.map((item) => <li key={item}>{item}</li>)}</ol></div>
-              <div><span>预期结果</span><p>{selected.expected}</p></div>
-              <div><span>边界情况</span><ul>{selected.edgeCases.map((item) => <li key={item}>{item}</li>)}</ul></div>
-            </div>
-          </article>
+          {selected ? (
+            <article className="rt-detail-panel">
+              <strong>{selected.title}</strong>
+              <p>{selected.why}</p>
+              <div className="rt-detail-grid">
+                <div><span>前置条件</span><ul>{selected.preconditions.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                <div><span>步骤</span><ol>{selected.steps.map((item) => <li key={item}>{item}</li>)}</ol></div>
+                <div><span>预期结果</span><p>{selected.expected}</p></div>
+                <div><span>边界情况</span><ul>{selected.edgeCases.map((item) => <li key={item}>{item}</li>)}</ul></div>
+              </div>
+            </article>
+          ) : (
+            <p className="rt-note">暂无测试详情。</p>
+          )}
         </section>
       </div>
     );
   }
 
   function renderValidate() {
+    const unsupportedFindingCount = run?.traceabilityValidation.unsupportedFindingIds.length ?? 2;
+    const unsupportedRequirementCount = run?.traceabilityValidation.unsupportedRequirementIds.length ?? 1;
+    const unsupportedTestCount = run?.traceabilityValidation.unsupportedTestCaseIds.length ?? 0;
+    const conflictCount = findingCards.reduce(
+      (total, finding) => total + finding.contradictingEvidence.length,
+      0,
+    );
+    const traceabilityCoverage = run
+      ? run.traceabilityValidation.status === "passed"
+        ? "100%"
+        : `${Math.max(0, 100 - (unsupportedFindingCount + unsupportedRequirementCount + unsupportedTestCount) * 10)}%`
+      : "94%";
+
     return (
       <div className="rt-page">
         <div className="rt-page__lead">
@@ -1079,10 +1508,10 @@ export default function ReviewTraceWorkbench() {
         </div>
 
         <div className="rt-inline-metrics">
-          <div className="rt-metric"><span>完全可追溯</span><strong>94%</strong><small>含 3 个显式假设</small></div>
-          <div className="rt-metric"><span>无支撑发现</span><strong>2</strong><small>需要移除或标记为假设</small></div>
-          <div className="rt-metric"><span>无测试需求</span><strong>1</strong><small>生成缺失测试</small></div>
-          <div className="rt-metric"><span>冲突组</span><strong>4</strong><small>已审查，但未忽略</small></div>
+          <div className="rt-metric"><span>完全可追溯</span><strong>{traceabilityCoverage}</strong><small>含显式假设</small></div>
+          <div className="rt-metric"><span>无支撑发现</span><strong>{unsupportedFindingCount}</strong><small>需要移除或标记为假设</small></div>
+          <div className="rt-metric"><span>无支撑需求</span><strong>{unsupportedRequirementCount}</strong><small>补强来源链</small></div>
+          <div className="rt-metric"><span>冲突组</span><strong>{conflictCount}</strong><small>已审查，但未忽略</small></div>
         </div>
 
         {validateTab === "matrix" ? (
@@ -1095,7 +1524,7 @@ export default function ReviewTraceWorkbench() {
               <span className="rt-pill">断链 / 警告 / 假设</span>
             </div>
             <div className="rt-validation-list">
-              {demoValidationIssues.map((issue) => (
+              {validationIssues.map((issue) => (
                 <button
                   key={issue.id}
                   className={`rt-validation-card rt-validation-card--${validationStatusClass(issue.status)}`}
@@ -1147,11 +1576,13 @@ export default function ReviewTraceWorkbench() {
             <h1>决策摘要</h1>
             <p className="rt-lead">用户最困扰什么、哪些证据最强、哪些仍不确定，以及优先该做什么。</p>
           </div>
-          <span className="rt-badge rt-badge--success">已验证，含显式假设</span>
+          <span className={`rt-badge ${run?.traceabilityValidation.status === "failed" ? "rt-badge--warning" : "rt-badge--success"}`}>
+            {currentRunStatus}
+          </span>
         </div>
 
         <section className="rt-grid rt-grid--overview">
-          {Object.entries(demoOverview.summary).map(([key, value]) => (
+          {Object.entries(overview.summary).map(([key, value]) => (
             <article key={key} className="rt-card rt-card--surface">
               <p className="rt-kicker">{key}</p>
               <strong>{value}</strong>
@@ -1167,7 +1598,7 @@ export default function ReviewTraceWorkbench() {
             </div>
           </div>
           <div className="rt-plan-row">
-            {demoOverview.versionPlan.map((item) => (
+            {overview.versionPlan.map((item) => (
               <article key={item.label} className="rt-plan-card">
                 <strong>{item.label}</strong>
                 <span>{item.note}</span>
@@ -1185,7 +1616,7 @@ export default function ReviewTraceWorkbench() {
             </div>
           </div>
           <div className="rt-deliverable-grid">
-            {demoOverview.deliverables.map((item) => (
+            {overview.deliverables.map((item) => (
               <article key={item} className="rt-deliverable-card">
                 <FolderOpen size={18} />
                 <strong>{item}</strong>
@@ -1243,112 +1674,139 @@ export default function ReviewTraceWorkbench() {
       return (
         <InspectorCard title="运行健康" subtitle={inspectorHint} icon={<Gauge />}>
           <div className="rt-inspector-metrics">
-            <div><span>数据完整度</span><strong>82%</strong></div>
-            <div><span>证据覆盖率</span><strong>74%</strong></div>
-            <div><span>追溯覆盖率</span><strong>0%</strong></div>
+            {summaryMetrics.slice(0, 3).map((metric) => (
+              <div key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></div>
+            ))}
           </div>
           <div className="rt-mini-stack">
             <span>提供方：{currentProvider}</span>
             <span>来源：{currentSource}</span>
-            <span>已知限制：限流、缓存示例兜底、假设门控。</span>
+            <span>已知限制：{run?.dataLimitations.join("；") || "限流、缓存示例兜底、假设门控。"}</span>
           </div>
         </InspectorCard>
       );
     }
 
     if (activeInspector.kind === "review") {
-      const review = demoReviewRows.find((row) => row.id === activeInspector.id) ?? demoReviewRows[0];
-      return <InspectorCard title="评论" subtitle={review.id} icon={<FolderOpen />}>{renderReviewSummary(review)}</InspectorCard>;
+      const review = rawReviewRows.find((row) => row.id === activeInspector.id) ??
+        cleanReviewRows.find((row) => row.id === activeInspector.id) ??
+        rawReviewRows[0] ??
+        cleanReviewRows[0];
+      return (
+        <InspectorCard title="评论" subtitle={review?.id ?? "暂无评论"} icon={<FolderOpen />}>
+          {review ? renderReviewSummary(review) : <p className="rt-note">当前没有评论可检查。</p>}
+        </InspectorCard>
+      );
     }
 
     if (activeInspector.kind === "theme") {
-      const theme = demoThemeCards.find((item) => item.id === activeInspector.id) ?? demoThemeCards[0];
+      const theme = themeCards.find((item) => item.id === activeInspector.id) ?? themeCards[0];
       return (
-        <InspectorCard title="主题" subtitle={theme.id} icon={<Sparkles />}>
-          <div className="rt-inspector-list">
-            <div><span>名称</span><strong>{theme.name}</strong></div>
-            <div><span>置信度</span><strong>{theme.confidence}</strong></div>
-            <div><span>评论</span><strong>{theme.reviews}</strong></div>
-            <div><span>冲突</span><strong>{theme.conflicts}</strong></div>
-          </div>
-          <p>{theme.summary}</p>
-          <div className="rt-sparkline rt-sparkline--mini">
-            {theme.spark.map((value, index) => <span key={index} style={{ height: `${value * 8}px` }} />)}
-          </div>
+        <InspectorCard title="主题" subtitle={theme?.id ?? "暂无主题"} icon={<Sparkles />}>
+          {theme ? (
+            <>
+              <div className="rt-inspector-list">
+                <div><span>名称</span><strong>{theme.name}</strong></div>
+                <div><span>置信度</span><strong>{theme.confidence}</strong></div>
+                <div><span>评论</span><strong>{theme.reviews}</strong></div>
+                <div><span>冲突</span><strong>{theme.conflicts}</strong></div>
+              </div>
+              <p>{theme.summary}</p>
+              <div className="rt-sparkline rt-sparkline--mini">
+                {theme.spark.map((value, index) => <span key={index} style={{ height: `${value * 8}px` }} />)}
+              </div>
+            </>
+          ) : <p className="rt-note">当前没有主题可检查。</p>}
         </InspectorCard>
       );
     }
 
     if (activeInspector.kind === "finding") {
-      const finding = demoFindingCards.find((item) => item.id === activeInspector.id) ?? demoFindingCards[0];
+      const finding = findingCards.find((item) => item.id === activeInspector.id) ?? findingCards[0];
       return (
-        <InspectorCard title="发现" subtitle={finding.id} icon={<Sparkles />}>
-          <div className="rt-inspector-list">
-            <div><span>严重度</span><strong>{finding.severity}</strong></div>
-            <div><span>置信度</span><strong>{finding.confidence}</strong></div>
-            <div><span>样本</span><strong>{finding.sampleCount}</strong></div>
-          </div>
-          <p>{finding.stats}</p>
-          <p>{finding.synthesis}</p>
-          <div className="rt-mini-stack">
-            {finding.contradictingEvidence.map((item) => <span key={item} className="rt-warning">{item}</span>)}
-            <span>{finding.limitation}</span>
-          </div>
+        <InspectorCard title="发现" subtitle={finding?.id ?? "暂无发现"} icon={<Sparkles />}>
+          {finding ? (
+            <>
+              <div className="rt-inspector-list">
+                <div><span>严重度</span><strong>{finding.severity}</strong></div>
+                <div><span>置信度</span><strong>{finding.confidence}</strong></div>
+                <div><span>样本</span><strong>{finding.sampleCount}</strong></div>
+              </div>
+              <p>{finding.stats}</p>
+              <p>{finding.synthesis}</p>
+              <div className="rt-mini-stack">
+                {finding.contradictingEvidence.map((item) => <span key={item} className="rt-warning">{item}</span>)}
+                <span>{finding.limitation}</span>
+              </div>
+            </>
+          ) : <p className="rt-note">当前没有发现可检查。</p>}
         </InspectorCard>
       );
     }
 
     if (activeInspector.kind === "requirement") {
-      const req = demoRequirements.find((item) => item.id === activeInspector.id) ?? demoRequirements[0];
+      const req = requirementCards.find((item) => item.id === activeInspector.id) ?? requirementCards[0];
       return (
-        <InspectorCard title="需求" subtitle={req.id} icon={<BookOpen />}>
-          <div className="rt-inspector-list">
-            <div><span>优先级</span><strong>{req.priority}</strong></div>
-            <div><span>状态</span><strong>{req.status}</strong></div>
-            <div><span>目标版本</span><strong>{req.targetRelease}</strong></div>
-            <div><span>置信度</span><strong>{req.confidence}</strong></div>
-          </div>
-          <p>{req.statement}</p>
-          <div className="rt-mini-stack">
-            <span>来源发现：{req.sourceFindings.join(", ")}</span>
-            <span>来源评论：{req.sourceReviews.join(", ")}</span>
-            {req.assumption ? <span className="rt-warning">显式假设</span> : null}
-          </div>
+        <InspectorCard title="需求" subtitle={req?.id ?? "暂无需求"} icon={<BookOpen />}>
+          {req ? (
+            <>
+              <div className="rt-inspector-list">
+                <div><span>优先级</span><strong>{req.priority}</strong></div>
+                <div><span>状态</span><strong>{req.status}</strong></div>
+                <div><span>目标版本</span><strong>{req.targetRelease}</strong></div>
+                <div><span>置信度</span><strong>{req.confidence}</strong></div>
+              </div>
+              <p>{req.statement}</p>
+              <div className="rt-mini-stack">
+                <span>来源发现：{req.sourceFindings.join(", ")}</span>
+                <span>来源评论：{req.sourceReviews.join(", ")}</span>
+                {req.assumption ? <span className="rt-warning">显式假设</span> : null}
+              </div>
+            </>
+          ) : <p className="rt-note">当前没有需求可检查。</p>}
         </InspectorCard>
       );
     }
 
     if (activeInspector.kind === "test_case") {
-      const testCase = demoTestCases.find((item) => item.id === activeInspector.id) ?? demoTestCases[0];
+      const testCase = testCaseCards.find((item) => item.id === activeInspector.id) ?? testCaseCards[0];
       return (
-        <InspectorCard title="测试用例" subtitle={testCase.id} icon={<TestTube2 />}>
-          <div className="rt-inspector-list">
-            <div><span>类型</span><strong>{testCase.type}</strong></div>
-            <div><span>优先级</span><strong>{testCase.priority}</strong></div>
-            <div><span>需求</span><strong>{testCase.requirementId}</strong></div>
-          </div>
-          <p>{testCase.expected}</p>
-          <div className="rt-mini-stack">
-            <span>原因：{testCase.why}</span>
-            <span>来源评论：{testCase.sourceReviews.join(", ")}</span>
-          </div>
+        <InspectorCard title="测试用例" subtitle={testCase?.id ?? "暂无测试"} icon={<TestTube2 />}>
+          {testCase ? (
+            <>
+              <div className="rt-inspector-list">
+                <div><span>类型</span><strong>{testCase.type}</strong></div>
+                <div><span>优先级</span><strong>{testCase.priority}</strong></div>
+                <div><span>需求</span><strong>{testCase.requirementId}</strong></div>
+              </div>
+              <p>{testCase.expected}</p>
+              <div className="rt-mini-stack">
+                <span>原因：{testCase.why}</span>
+                <span>来源评论：{testCase.sourceReviews.join(", ")}</span>
+              </div>
+            </>
+          ) : <p className="rt-note">当前没有测试用例可检查。</p>}
         </InspectorCard>
       );
     }
 
     if (activeInspector.kind === "validation_issue") {
-      const issue = demoValidationIssues.find((item) => item.id === activeInspector.id) ?? demoValidationIssues[0];
+      const issue = validationIssues.find((item) => item.id === activeInspector.id) ?? validationIssues[0];
       return (
-        <InspectorCard title="验证" subtitle={issue.id} icon={<GitBranch />}>
-          <div className="rt-inspector-list">
-            <div><span>状态</span><strong>{issue.status}</strong></div>
-            <div><span>评论</span><strong>{issue.reviewCount}</strong></div>
-            <div><span>路径</span><strong>{issue.path}</strong></div>
-          </div>
-          <p>{issue.note}</p>
-          <div className="rt-mini-stack">
-            <span>动作：{issue.action}</span>
-          </div>
+        <InspectorCard title="验证" subtitle={issue?.id ?? "暂无验证"} icon={<GitBranch />}>
+          {issue ? (
+            <>
+              <div className="rt-inspector-list">
+                <div><span>状态</span><strong>{issue.status}</strong></div>
+                <div><span>评论</span><strong>{issue.reviewCount}</strong></div>
+                <div><span>路径</span><strong>{issue.path}</strong></div>
+              </div>
+              <p>{issue.note}</p>
+              <div className="rt-mini-stack">
+                <span>动作：{issue.action}</span>
+              </div>
+            </>
+          ) : <p className="rt-note">当前没有验证项可检查。</p>}
         </InspectorCard>
       );
     }
@@ -1356,10 +1814,10 @@ export default function ReviewTraceWorkbench() {
     return (
       <InspectorCard title="总览" subtitle="决策摘要" icon={<Gauge />}>
         <div className="rt-mini-stack">
-          <span>{demoOverview.summary.strongest}</span>
-          <span>{demoOverview.summary.uncertain}</span>
-          <span>{demoOverview.summary.buildV1}</span>
-          <span>{demoOverview.summary.defer}</span>
+          <span>{overview.summary.strongest}</span>
+          <span>{overview.summary.uncertain}</span>
+          <span>{overview.summary.buildV1}</span>
+          <span>{overview.summary.defer}</span>
         </div>
       </InspectorCard>
     );
@@ -1402,20 +1860,28 @@ export default function ReviewTraceWorkbench() {
 
         <section className="rt-nav__section">
           <span className="rt-nav__heading">阶段</span>
-          {stageNav.map((item) => (
-            <button
-              key={item.id}
-              className={`rt-nav__item ${activeView === item.view ? "is-active" : ""}`}
-              type="button"
-              onClick={() => goToView(item.view)}
-            >
-              {stageIcon(demoStages.find((stage) => stage.id === item.id)?.status ?? "pending")}
-              <span>
-                <strong>{item.label}</strong>
-                <small>{demoStages.find((stage) => stage.id === item.id)?.badge ?? "—"}</small>
-              </span>
-            </button>
-          ))}
+          {stageNav.map((item) => {
+            const demoStage = demoStages.find((stage) => stage.id === item.id);
+            const workflowStatus = run?.stages.find(
+              (stage) => stage.name === workflowStageIdForNav(item.id),
+            )?.status;
+            const navStatus = workflowStatus ?? demoStage?.status ?? "pending";
+
+            return (
+              <button
+                key={item.id}
+                className={`rt-nav__item ${activeView === item.view ? "is-active" : ""}`}
+                type="button"
+                onClick={() => goToView(item.view)}
+              >
+                {stageIcon(navStatus)}
+                <span>
+                  <strong>{item.label}</strong>
+                  <small>{workflowStatus ? stageLabel(workflowStatus) : demoStage?.badge ?? "—"}</small>
+                </span>
+              </button>
+            );
+          })}
         </section>
 
         <section className="rt-nav__section">
@@ -1445,16 +1911,16 @@ export default function ReviewTraceWorkbench() {
                 <Workflow size={18} />
               </div>
               <div>
-                <strong>{demoApp.appName}</strong>
+                <strong>{run ? "ReviewTrace 运行" : demoApp.appName}</strong>
                 <span>{views.find((item) => item.id === activeView)?.label ?? "ReviewTrace"}</span>
               </div>
             </div>
             <div className="rt-topbar__meta">
-              <span className="rt-topbar__token">{demoApp.runId}</span>
+              <span className="rt-topbar__token">{currentRunId}</span>
               <span className={`rt-badge ${currentRunStatus === "运行中" ? "rt-badge--running" : currentRunStatus === "已验证" ? "rt-badge--success" : "rt-badge--warning"}`}>{currentRunStatus}</span>
               <span className="rt-topbar__token">{currentSource}</span>
               <span className="rt-topbar__token">{currentProvider}</span>
-              <span className="rt-topbar__token">上次保存 {demoApp.lastSaved}</span>
+              <span className="rt-topbar__token">{run ? "本次运行已生成" : `上次保存 ${demoApp.lastSaved}`}</span>
             </div>
           </div>
           <div className="rt-topbar__actions">

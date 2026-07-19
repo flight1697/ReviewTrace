@@ -46,6 +46,14 @@ export type Review = {
   rating: number;
   title: string;
   body: string;
+  appVersion?: string;
+  source?: string;
+  appId?: string;
+  storefront?: string;
+  author?: string;
+  date?: string;
+  locale?: string;
+  rawMetadata?: Record<string, unknown>;
 };
 
 export type Finding = {
@@ -173,6 +181,17 @@ export type WorkflowRun = {
     unsupportedTestCaseIds: string[];
   };
   validationMessages: string[];
+};
+
+export type WorkflowRunSummary = {
+  runId: string;
+  source: WorkflowRun["source"];
+  scope: WorkflowRun["scope"];
+  status: string;
+  reviewCount: number;
+  findingCount: number;
+  requirementCount: number;
+  testCaseCount: number;
 };
 
 export type WorkflowRequestBody = Record<string, string>;
@@ -303,6 +322,27 @@ export async function requestWorkflowRun(
   }
 
   return (await response.json()) as WorkflowRun;
+}
+
+export async function requestWorkflowRunById(runId: string): Promise<WorkflowRun> {
+  const response = await fetch(`${apiUrl}/workflow/runs/${encodeURIComponent(runId)}`);
+
+  if (!response.ok) {
+    throw new Error(await workflowErrorMessage(response));
+  }
+
+  return (await response.json()) as WorkflowRun;
+}
+
+export async function requestWorkflowRunSummaries(): Promise<WorkflowRunSummary[]> {
+  const response = await fetch(`${apiUrl}/workflow/runs`);
+
+  if (!response.ok) {
+    throw new Error(await workflowErrorMessage(response));
+  }
+
+  const body = (await response.json()) as { runs?: WorkflowRunSummary[] };
+  return body.runs ?? [];
 }
 
 export async function requestWorkflowRunStream(

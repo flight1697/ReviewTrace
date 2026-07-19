@@ -190,6 +190,42 @@ def test_fixture_workflow_returns_traceable_artifacts():
     ]
 
 
+def test_workflow_run_can_be_fetched_after_creation():
+    client = TestClient(app)
+
+    created_response = client.post(
+        "/workflow/runs",
+        json={
+            "appStoreUrl": "https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684",
+            "analysisGoal": "关注订阅转化相关投诉",
+            "sourceMode": "fixture",
+        },
+    )
+
+    assert created_response.status_code == 200
+    created = created_response.json()
+
+    detail_response = client.get(f"/workflow/runs/{created['runId']}")
+    list_response = client.get("/workflow/runs")
+
+    assert detail_response.status_code == 200
+    assert detail_response.json() == created
+    assert list_response.status_code == 200
+    assert any(
+        run["runId"] == created["runId"]
+        and run["reviewCount"] == len(created["reviews"])
+        and run["status"] == created["traceabilityValidation"]["status"]
+        for run in list_response.json()["runs"]
+    )
+
+
+def test_unknown_workflow_run_returns_404():
+    response = TestClient(app).get("/workflow/runs/missing-run")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "未找到指定工作流运行。"
+
+
 def test_workflow_stream_emits_stage_progress_before_final_run():
     client = TestClient(app)
 
@@ -223,6 +259,11 @@ def test_workflow_stream_emits_stage_progress_before_final_run():
     assert final_events[0]["run"]["runId"] == "fixture-run-001"
     assert final_events[0]["run"]["analysisScope"]["selectionSummary"]
     assert final_events[0]["run"]["analysisScope"]["filteringRules"]
+
+    detail_response = client.get("/workflow/runs/fixture-run-001")
+
+    assert detail_response.status_code == 200
+    assert detail_response.json() == final_events[0]["run"]
 
 
 def test_live_app_store_reviews_run_through_same_workflow(monkeypatch):
