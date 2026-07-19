@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Database,
+  Download,
   FileText,
   Loader2,
   Play,
@@ -78,7 +79,15 @@ export default function Home() {
   const [analysisGoal, setAnalysisGoal] = useState(defaultAnalysisGoal);
   const [sourceMode, setSourceMode] = useState<SourceMode>("live");
   const [activeTab, setActiveTab] = useState<ArtifactTab>("reviews");
-  const { error, failWorkflow, requestWorkflow, run, status } = useWorkflowRun();
+  const {
+    error,
+    failWorkflow,
+    progressStages,
+    requestWorkflow,
+    run,
+    stageReports,
+    status,
+  } = useWorkflowRun();
   const modelStatus = useModelStatus();
 
   async function runConfiguredWorkflow() {
@@ -91,6 +100,19 @@ export default function Home() {
       analysisGoal,
       sourceMode,
     });
+  }
+
+  async function runFixtureWorkflow() {
+    setSourceMode("fixture");
+    await requestWorkflow({
+      appStoreUrl: appStoreLink,
+      analysisGoal,
+      sourceMode: "fixture",
+    });
+  }
+
+  function showImportControls() {
+    setSourceMode("import");
   }
 
   async function importReviews(event: ChangeEvent<HTMLInputElement>) {
@@ -118,7 +140,8 @@ export default function Home() {
     }
   }
 
-  const visibleStages = visibleWorkflowStages(run, status);
+  const visibleStages = visibleWorkflowStages(run, status, progressStages);
+  const visibleStageReports = run?.stageReports ?? stageReports;
   const isRunning = status === "running";
 
   return (
@@ -232,6 +255,7 @@ export default function Home() {
               <p className="helper-text">
                 在线采集依赖 Apple 公开 RSS；如果返回空数据，可切换缓存示例或导入评论。
               </p>
+              {sourceMode === "import" ? <ImportSampleDownloads /> : null}
             </div>
           </form>
         </section>
@@ -258,16 +282,20 @@ export default function Home() {
           ))}
         </section>
 
-        {run?.stageReports?.length ? (
+        {visibleStageReports.length ? (
           <section className="progress-panel" aria-label="阶段小结">
             <div className="section-heading">
               <div>
                 <p className="kicker">阶段小结</p>
-                <h3>每一步都保留了可查看的中间结果与修订记录</h3>
+                <h3>
+                  {isRunning
+                    ? "工作流正在流式返回阶段进度"
+                    : "每一步都保留了可查看的中间结果与修订记录"}
+                </h3>
               </div>
             </div>
             <div className="report-grid">
-              {run.stageReports.map((report) => (
+              {visibleStageReports.map((report) => (
                 <article className="report-card" key={report.name}>
                   <div className="card-topline">
                     <strong>{stageReportLabel(report.name)}</strong>
@@ -316,6 +344,8 @@ export default function Home() {
           <WorkflowDashboard
             activeTab={activeTab}
             onChangeTab={setActiveTab}
+            onRunFixture={runFixtureWorkflow}
+            onShowImport={showImportControls}
             run={run}
           />
         ) : (
@@ -323,6 +353,28 @@ export default function Home() {
         )}
       </section>
     </main>
+  );
+}
+
+function ImportSampleDownloads() {
+  return (
+    <div className="sample-downloads" aria-label="导入样例下载">
+      <a
+        download="reviewtrace-sample-reviews.json"
+        href={sampleDatasetHref("json")}
+      >
+        <Download size={16} aria-hidden="true" />
+        下载 JSON 样例
+      </a>
+      <a
+        download="reviewtrace-sample-reviews.csv"
+        href={sampleDatasetHref("csv")}
+      >
+        <Download size={16} aria-hidden="true" />
+        下载 CSV 样例
+      </a>
+      <span>字段包含 id、rating、title、body、appVersion，可直接导入试跑。</span>
+    </div>
   );
 }
 
@@ -370,13 +422,51 @@ function MetricCard({
   );
 }
 
+function LiveEmptyNotice({
+  onRunFixture,
+  onShowImport,
+}: {
+  onRunFixture: () => void;
+  onShowImport: () => void;
+}) {
+  return (
+    <section
+      aria-label="live 源空数据提示"
+      className="notice warning empty-live-notice"
+      role="alert"
+    >
+      <AlertTriangle size={20} aria-hidden="true" />
+      <div>
+        <strong>Apple RSS 暂时没有返回可分析评论</strong>
+        <p>
+          ReviewTrace 已停止生成发现、需求和测试用例，避免伪造无证据结论。你可以
+          改用缓存示例，或导入 JSON / CSV 评论继续分析。
+        </p>
+        <div className="recovery-actions">
+          <button onClick={onRunFixture} type="button">
+            改用缓存示例
+          </button>
+          <button onClick={onShowImport} type="button">
+            导入 JSON / CSV 评论
+          </button>
+          <span>稍后重新采集 live 源</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function WorkflowDashboard({
   activeTab,
   onChangeTab,
+  onRunFixture,
+  onShowImport,
   run,
 }: {
   activeTab: ArtifactTab;
   onChangeTab: (tab: ArtifactTab) => void;
+  onRunFixture: () => void;
+  onShowImport: () => void;
   run: WorkflowRun;
 }) {
   const summaryCards = [
@@ -431,6 +521,13 @@ function WorkflowDashboard({
         </span>
       </div>
 
+      {isLiveEmptyRun(run) ? (
+        <LiveEmptyNotice
+          onRunFixture={onRunFixture}
+          onShowImport={onShowImport}
+        />
+      ) : null}
+
       <dl className="summary-grid">
         {summaryCards.map((card) => (
           <div className="summary-card" key={card.label}>
@@ -454,6 +551,11 @@ function WorkflowDashboard({
           <p>
             范围评论：{(scopeSummary.scopeReviewIds ?? []).join(", ") || "全部保留评论"}
           </p>
+          <p>
+            过滤说明：
+            {scopeSummary.selectionSummary ||
+              "系统会根据分析目标、评分、版本和评论内容选择当前分析范围。"}
+          </p>
           <div className="chip-row" aria-label="分析主题">
             {scopeSummary.focusAreas.map((item) => (
               <span className="pill" key={item}>
@@ -467,9 +569,17 @@ function WorkflowDashboard({
               {scopeSummary.dataSignals.map((signal) => (
                 <p key={signal}>{signal}</p>
               ))}
+              {(scopeSummary.excludedReviewIds ?? []).length ? (
+                <p>排除评论：{scopeSummary.excludedReviewIds?.join(", ")}</p>
+              ) : (
+                <p>排除评论：无</p>
+              )}
             </div>
             <div>
-              <strong>约束与不确定性</strong>
+              <strong>过滤规则、约束与不确定性</strong>
+              {(scopeSummary.filteringRules ?? []).map((rule) => (
+                <p key={rule}>规则：{rule}</p>
+              ))}
               {scopeSummary.constraints.map((constraint) => (
                 <p key={constraint}>{constraint}</p>
               ))}
@@ -491,9 +601,19 @@ function WorkflowDashboard({
         </div>
 
         <div className="insight-list">
-          {run.findings.map((finding) => (
-            <FindingCard finding={finding} key={finding.id} />
-          ))}
+          {run.findings.length ? (
+            run.findings.map((finding) => (
+              <FindingCard finding={finding} key={finding.id} />
+            ))
+          ) : (
+            <article className="empty-result-card">
+              <AlertTriangle size={18} aria-hidden="true" />
+              <div>
+                <strong>当前没有生成产品发现</strong>
+                <p>系统没有足够评论证据，因此没有继续生成需求或 QA 用例。</p>
+              </div>
+            </article>
+          )}
         </div>
       </section>
 
@@ -557,6 +677,12 @@ function renderArtifactTab(tab: ArtifactTab, run: WorkflowRun) {
   if (tab === "rawReviews") {
     return (
       <div className="artifact-list">
+        {run.rawReviews.length === 0 ? (
+          <article className="compact-card warning-card">
+            <h4>没有原始评论</h4>
+            <p>live 源没有返回可读取的评论，系统不会伪造后续分析证据。</p>
+          </article>
+        ) : null}
         {run.rawReviews.map((review) => (
           <article className="compact-card" key={review.id}>
             <div>
@@ -584,6 +710,12 @@ function renderArtifactTab(tab: ArtifactTab, run: WorkflowRun) {
             {run.cleaningSummary.discardedEmptyCount} 条
           </small>
         </article>
+        {run.reviews.length === 0 ? (
+          <article className="compact-card warning-card">
+            <h4>没有清洗后评论</h4>
+            <p>请导入评论文件，或稍后重新尝试在线采集。</p>
+          </article>
+        ) : null}
         {run.reviews.map((review) => (
           <article className="compact-card" key={review.id}>
             <div>
@@ -617,6 +749,14 @@ function renderArtifactTab(tab: ArtifactTab, run: WorkflowRun) {
           <p>
             范围评论：{(scopeSummary.scopeReviewIds ?? []).join(", ") || "全部保留评论"}
           </p>
+          <p>
+            过滤说明：
+            {scopeSummary.selectionSummary ||
+              "系统会根据分析目标和评论信号选择语义分析范围。"}
+          </p>
+          {(scopeSummary.filteringRules ?? []).map((rule) => (
+            <p key={rule}>规则：{rule}</p>
+          ))}
           <div className="chip-row">
             {scopeSummary.focusAreas.map((item) => (
               <span className="pill" key={item}>
@@ -625,17 +765,24 @@ function renderArtifactTab(tab: ArtifactTab, run: WorkflowRun) {
             ))}
           </div>
         </article>
-        {run.findings.map((finding) => (
-          <article className="compact-card" key={finding.id}>
-            <div className="card-topline">
-              <strong>{finding.title}</strong>
-              <span className="pill muted">{finding.confidence}</span>
-            </div>
-            <p>样本 {finding.sampleCount} 条 · 方法：{finding.method}</p>
-            <p>证据：{finding.reviewIds.join(", ")}</p>
-            <p>冲突证据：{finding.conflictingEvidence.length}</p>
+        {run.findings.length ? (
+          run.findings.map((finding) => (
+            <article className="compact-card" key={finding.id}>
+              <div className="card-topline">
+                <strong>{finding.title}</strong>
+                <span className="pill muted">{finding.confidence}</span>
+              </div>
+              <p>样本 {finding.sampleCount} 条 · 方法：{finding.method}</p>
+              <p>证据：{finding.reviewIds.join(", ")}</p>
+              <p>冲突证据：{finding.conflictingEvidence.length}</p>
+            </article>
+          ))
+        ) : (
+          <article className="compact-card warning-card">
+            <h4>没有分类结果</h4>
+            <p>当前范围内没有评论证据，因此没有生成用户问题分类。</p>
           </article>
-        ))}
+        )}
       </div>
     );
   }
@@ -794,8 +941,60 @@ function scopeSummaryForRun(run: WorkflowRun): AnalysisScope {
       constraints: ["只使用当前评论证据。"],
       uncertaintyNotes: [],
       scopeReviewIds: [],
+      selectionSummary: "",
+      filteringRules: [],
+      excludedReviewIds: [],
     }
   );
+}
+
+function isLiveEmptyRun(run: WorkflowRun) {
+  return (
+    run.source.mode === "live" &&
+    run.rawReviews.length === 0 &&
+    run.reviews.length === 0
+  );
+}
+
+function sampleDatasetHref(format: "json" | "csv") {
+  const jsonSample = {
+    reviews: [
+      {
+        id: "sample-001",
+        rating: 2,
+        title: "订阅说明不清楚",
+        body: "价格、包含内容和取消方式需要在购买前解释得更明确。",
+        appVersion: "2.0.0",
+        date: "2026-07-01T00:00:00Z",
+        locale: "zh-CN",
+        source: "import",
+      },
+      {
+        id: "sample-002",
+        rating: 5,
+        title: "训练内容很方便",
+        body: "居家训练课程安排清楚，动作提示也容易跟上。",
+        appVersion: "2.0.0",
+        date: "2026-07-02T00:00:00Z",
+        locale: "zh-CN",
+        source: "import",
+      },
+    ],
+  };
+
+  if (format === "json") {
+    return `data:application/json;charset=utf-8,${encodeURIComponent(
+      JSON.stringify(jsonSample, null, 2),
+    )}`;
+  }
+
+  return `data:text/csv;charset=utf-8,${encodeURIComponent(
+    [
+      "id,rating,title,body,appVersion,date,locale,source",
+      "sample-001,2,订阅说明不清楚,价格和取消方式需要更明确,2.0.0,2026-07-01T00:00:00Z,zh-CN,import",
+      "sample-002,5,训练内容很方便,居家训练课程安排清楚,2.0.0,2026-07-02T00:00:00Z,zh-CN,import",
+    ].join("\n"),
+  )}`;
 }
 
 function stageReportLabel(name: string) {

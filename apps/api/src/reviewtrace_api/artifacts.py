@@ -60,6 +60,9 @@ class AnalysisScope(BaseModel):
     constraints: list[str]
     uncertaintyNotes: list[str]
     scopeReviewIds: list[str] = Field(default_factory=list)
+    selectionSummary: str = ""
+    filteringRules: list[str] = Field(default_factory=list)
+    excludedReviewIds: list[str] = Field(default_factory=list)
 
 
 class Evidence(BaseModel):

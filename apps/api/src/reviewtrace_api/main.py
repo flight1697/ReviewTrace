@@ -1,5 +1,8 @@
+import json
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from reviewtrace_api.config import load_local_environment
 from reviewtrace_api.workflow import WorkflowRunRequest
@@ -37,3 +40,22 @@ def model_config() -> dict[str, object]:
 @app.post("/workflow/runs")
 def run_workflow(request: WorkflowRunRequest) -> dict[str, object]:
     return workflow_runner.run(request)
+
+
+@app.post("/workflow/runs/stream")
+def stream_workflow(request: WorkflowRunRequest) -> StreamingResponse:
+    def event_lines():
+        try:
+            for event in workflow_runner.stream(request):
+                yield json.dumps(event, ensure_ascii=False) + "\n"
+        except Exception as error:
+            detail = getattr(error, "detail", "工作流请求失败")
+            yield json.dumps(
+                {
+                    "type": "error",
+                    "message": str(detail),
+                },
+                ensure_ascii=False,
+            ) + "\n"
+
+    return StreamingResponse(event_lines(), media_type="application/x-ndjson")

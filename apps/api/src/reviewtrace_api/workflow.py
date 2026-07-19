@@ -6,6 +6,7 @@ import re
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from collections.abc import Iterator
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,27 @@ from reviewtrace_api.artifacts import validated_workflow_run
 
 STAGE_STATUS_COMPLETE = "complete"
 STAGE_STATUS_FAILED = "failed"
+STAGE_STATUS_PENDING = "pending"
+STAGE_STATUS_RUNNING = "running"
+
+WORKFLOW_STAGE_NAMES = [
+    "reviews",
+    "cleaning",
+    "scope",
+    "analysis",
+    "prd",
+    "tests",
+    "validation",
+]
+WORKFLOW_PROGRESS_SEQUENCE = [
+    "reviews",
+    "cleaning",
+    "scope",
+    "analysis",
+    "prd",
+    "tests",
+    "validation",
+]
 
 
 class WorkflowRunRequest(BaseModel):
@@ -61,6 +83,9 @@ class WorkflowRunner:
 
     def run(self, request: WorkflowRunRequest) -> dict[str, object]:
         return run_review_workflow(request, self.source_adapters)
+
+    def stream(self, request: WorkflowRunRequest) -> Iterator[dict[str, object]]:
+        return run_review_workflow_events(request, self.source_adapters)
 
 
 class LiveReviewSourceAdapter:
@@ -158,14 +183,94 @@ def run_review_workflow(
     )
 
 
-def complete_review_workflow(
+def run_review_workflow_events(
+    request: WorkflowRunRequest,
+    source_adapters: dict[str, ReviewSourceAdapter],
+) -> Iterator[dict[str, object]]:
+    source_adapter = source_adapters.get(request.source_mode)
+    if not source_adapter:
+        raise HTTPException(status_code=400, detail="sourceMode 必须是 live、fixture 或 import。")
+
+    yield stage_event("reviews", STAGE_STATUS_RUNNING)
+    batch = source_adapter.collect(request)
+    yield stage_event("reviews", STAGE_STATUS_COMPLETE)
+    yield report_event(
+        "reviews",
+        STAGE_STATUS_COMPLETE,
+        f"收集到 {len(batch.raw_reviews)} 条原始评论。",
+        [
+            f"数据源：{batch.source['label']}",
+            f"分析目标：{batch.scope['analysisGoal']}",
+        ],
+    )
+
+    workflow: dict[str, object] | None = None
+    for event in complete_review_workflow_events(
+        batch.raw_reviews,
+        request.analysis_goal,
+        batch.analysis_override,
+    ):
+        if event["type"] == "workflow":
+            workflow = event["workflow"]  # type: ignore[assignment]
+        else:
+            yield event
+
+    if workflow is None:
+        raise HTTPException(status_code=500, detail="工作流没有生成最终结果。")
+
+    yield {
+        "type": "run",
+        "run": workflow_run_payload(
+            run_id=batch.run_id,
+            source=batch.source,
+            scope=batch.scope,
+            raw_reviews=batch.raw_reviews,
+            workflow=workflow,
+            validation_messages=batch.validation_messages,
+        ),
+    }
+
+
+def complete_review_workflow_events(
     raw_reviews: list[dict[str, object]],
     analysis_goal: str,
     analysis_override: Any | None = None,
-) -> dict[str, object]:
+) -> Iterator[dict[str, object]]:
+    yield stage_event("cleaning", STAGE_STATUS_RUNNING)
     cleaning_result = clean_reviews(raw_reviews)
     reviews = cleaning_result["reviews"]
+    yield stage_event("cleaning", STAGE_STATUS_COMPLETE)
+    yield report_event(
+        "cleaning",
+        STAGE_STATUS_COMPLETE,
+        f"清洗后保留 {len(reviews)} 条评论。",
+        [
+            f"输入：{cleaning_result['summary']['inputCount']} 条",
+            f"去重：{cleaning_result['summary']['duplicateCount']} 条",
+            f"移除空评论：{cleaning_result['summary']['discardedEmptyCount']} 条",
+        ],
+    )
+
+    yield stage_event("scope", STAGE_STATUS_RUNNING)
     scope_reviews = select_scope_reviews(reviews, analysis_goal)
+    default_scope = build_default_analysis_scope(
+        analysis_goal,
+        scope_reviews,
+        reviews,
+    )
+    yield stage_event("scope", STAGE_STATUS_COMPLETE)
+    yield report_event(
+        "scope",
+        STAGE_STATUS_COMPLETE,
+        str(default_scope["selectionSummary"]),
+        [
+            f"范围评论：{', '.join(default_scope['scopeReviewIds']) or '无'}",
+            *[f"规则：{rule}" for rule in default_scope["filteringRules"]],
+        ],
+        revisions=[*[f"不确定性：{note}" for note in default_scope["uncertaintyNotes"]]],
+    )
+
+    yield stage_event("analysis", STAGE_STATUS_RUNNING)
     analysis = (
         analysis_override(scope_reviews)
         if analysis_override
@@ -175,15 +280,76 @@ def complete_review_workflow(
         analysis.get("scope"),
         analysis_goal,
         scope_reviews,
-    )
-    findings = enrich_findings_with_evidence(analysis["findings"], reviews)
-    artifacts = generate_product_artifacts(
-        analysis_goal,
-        analysis_scope,
-        findings,
         reviews,
     )
-    stage_reports = build_stage_reports(
+    findings = enrich_findings_with_evidence(analysis["findings"], reviews)
+    yield stage_event("analysis", STAGE_STATUS_COMPLETE)
+    yield report_event(
+        "analysis",
+        STAGE_STATUS_COMPLETE,
+        f"{analysis['summary']['provider']} / {analysis['summary']['model']} 生成 {len(findings)} 个发现。",
+        [
+            "模型驱动" if analysis["summary"]["modelDriven"] else "确定性兜底",
+            *[f"发现：{finding['title']}" for finding in findings[:3]],
+        ],
+    )
+
+    yield stage_event("prd", STAGE_STATUS_RUNNING)
+    requirements = generate_requirements(findings, analysis_scope)
+    version_plan = generate_version_plan(requirements, analysis_scope)
+    prd = generate_prd(analysis_goal, analysis_scope, requirements, version_plan)
+    yield stage_event("prd", STAGE_STATUS_COMPLETE)
+    yield report_event(
+        "prd",
+        STAGE_STATUS_COMPLETE,
+        f"生成 {len(requirements)} 条需求，拆分为 {len(version_plan['versions'])} 个版本。",
+        [f"PRD 目标：{prd['objective']}"],
+        revisions=[*[f"版本：{version['name']}" for version in version_plan["versions"]]],
+    )
+
+    yield stage_event("tests", STAGE_STATUS_RUNNING)
+    test_cases = generate_test_cases(requirements)
+    yield stage_event("tests", STAGE_STATUS_COMPLETE)
+    yield report_event(
+        "tests",
+        STAGE_STATUS_COMPLETE,
+        f"生成 {len(test_cases)} 个 QA 测试用例。",
+        [*[f"测试：{test_case['title']}" for test_case in test_cases[:3]]],
+        revisions=[
+            "只为非假设需求生成测试用例。",
+            "测试步骤直接引用源评论编号与需求边界。",
+        ],
+    )
+
+    yield stage_event("validation", STAGE_STATUS_RUNNING)
+    traceability_validation = validate_traceability(
+        findings,
+        reviews,
+        requirements,
+        test_cases,
+    )
+    yield stage_event("validation", STAGE_STATUS_COMPLETE)
+    yield report_event(
+        "validation",
+        STAGE_STATUS_COMPLETE,
+        (
+            "追溯校验通过"
+            if traceability_validation["status"] == "passed"
+            else "追溯校验未通过"
+        ),
+        [
+            f"未通过发现：{len(traceability_validation['unsupportedFindingIds'])}",
+            f"未通过需求：{len(traceability_validation['unsupportedRequirementIds'])}",
+            f"未通过测试：{len(traceability_validation['unsupportedTestCaseIds'])}",
+        ],
+        errors=[
+            *traceability_validation["unsupportedFindingIds"],
+            *traceability_validation["unsupportedRequirementIds"],
+            *traceability_validation["unsupportedTestCaseIds"],
+        ],
+    )
+
+    workflow = workflow_from_parts(
         raw_reviews=raw_reviews,
         reviews=reviews,
         scope_reviews=scope_reviews,
@@ -191,27 +357,124 @@ def complete_review_workflow(
         analysis_summary=analysis["summary"],
         analysis_scope=analysis_scope,
         findings=findings,
-        requirements=artifacts["requirements"],
-        version_plan=artifacts["versionPlan"],
-        prd=artifacts["prd"],
-        test_cases=artifacts["testCases"],
-        traceability_validation=artifacts["traceabilityValidation"],
+        requirements=requirements,
+        version_plan=version_plan,
+        prd=prd,
+        test_cases=test_cases,
+        traceability_validation=traceability_validation,
+    )
+
+    yield {
+        "type": "workflow",
+        "workflow": workflow,
+    }
+
+
+def complete_review_workflow(
+    raw_reviews: list[dict[str, object]],
+    analysis_goal: str,
+    analysis_override: Any | None = None,
+) -> dict[str, object]:
+    for event in complete_review_workflow_events(
+        raw_reviews,
+        analysis_goal,
+        analysis_override,
+    ):
+        if event["type"] == "workflow":
+            return event["workflow"]  # type: ignore[return-value]
+
+    raise HTTPException(status_code=500, detail="工作流没有生成最终结果。")
+
+
+def workflow_from_parts(
+    raw_reviews: list[dict[str, object]],
+    reviews: list[dict[str, object]],
+    scope_reviews: list[dict[str, object]],
+    cleaning_summary: dict[str, object],
+    analysis_summary: dict[str, object],
+    analysis_scope: dict[str, object],
+    findings: list[dict[str, object]],
+    requirements: list[dict[str, object]],
+    version_plan: dict[str, object],
+    prd: dict[str, object],
+    test_cases: list[dict[str, object]],
+    traceability_validation: dict[str, object],
+) -> dict[str, object]:
+    stage_reports = build_stage_reports(
+        raw_reviews=raw_reviews,
+        reviews=reviews,
+        scope_reviews=scope_reviews,
+        cleaning_summary=cleaning_summary,
+        analysis_summary=analysis_summary,
+        analysis_scope=analysis_scope,
+        findings=findings,
+        requirements=requirements,
+        version_plan=version_plan,
+        prd=prd,
+        test_cases=test_cases,
+        traceability_validation=traceability_validation,
     )
 
     return {
         "analysisScope": analysis_scope,
-        "cleaningSummary": cleaning_result["summary"],
+        "cleaningSummary": cleaning_summary,
         "reviews": reviews,
         "ratingSummary": summarize_ratings(reviews),
-        "analysisSummary": analysis["summary"],
+        "analysisSummary": analysis_summary,
         "stageReports": stage_reports,
-        "findings": artifacts["findings"],
-        "requirements": artifacts["requirements"],
-        "versionPlan": artifacts["versionPlan"],
-        "prd": artifacts["prd"],
-        "testCases": artifacts["testCases"],
-        "dataLimitations": artifacts["dataLimitations"],
-        "traceabilityValidation": artifacts["traceabilityValidation"],
+        "findings": findings,
+        "requirements": requirements,
+        "versionPlan": version_plan,
+        "prd": prd,
+        "testCases": test_cases,
+        "dataLimitations": data_limitations(reviews),
+        "traceabilityValidation": traceability_validation,
+    }
+
+
+def stage_event(stage_name: str, status: str) -> dict[str, object]:
+    return {
+        "type": "stage",
+        "stage": {"name": stage_name, "status": status},
+        "stages": progress_stages(stage_name, status),
+    }
+
+
+def progress_stages(stage_name: str, status: str) -> list[dict[str, str]]:
+    active_index = WORKFLOW_PROGRESS_SEQUENCE.index(stage_name)
+    completed_names = set(WORKFLOW_PROGRESS_SEQUENCE[:active_index])
+    stages: list[dict[str, str]] = []
+
+    for name in WORKFLOW_STAGE_NAMES:
+        if name in completed_names:
+            stage_status = STAGE_STATUS_COMPLETE
+        elif name == stage_name:
+            stage_status = status
+        else:
+            stage_status = STAGE_STATUS_PENDING
+        stages.append({"name": name, "status": stage_status})
+
+    return stages
+
+
+def report_event(
+    name: str,
+    status: str,
+    summary: str,
+    details: list[str] | None = None,
+    revisions: list[str] | None = None,
+    errors: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "type": "report",
+        "report": {
+            "name": name,
+            "status": status,
+            "summary": summary,
+            "details": details or [],
+            "revisions": revisions or [],
+            "errors": errors or [],
+        },
     }
 
 
@@ -493,7 +756,9 @@ def build_stub_analysis(
 def build_default_analysis_scope(
     analysis_goal: str,
     reviews: list[dict[str, object]],
+    all_reviews: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
+    all_review_rows = all_reviews if all_reviews is not None else reviews
     ratings = [int(review["rating"]) for review in reviews if int(review["rating"]) > 0]
     versions = sorted(
         {
@@ -560,6 +825,9 @@ def build_default_analysis_scope(
     if low_rating_count and high_rating_count:
         uncertainty_notes.append("同一主题可能同时存在支持和反对证据。")
 
+    scope_review_ids = [str(review["id"]) for review in reviews]
+    all_review_ids = [str(review["id"]) for review in all_review_rows]
+
     return {
         "requestedGoal": goal_text,
         "focusSummary": goal_text,
@@ -567,8 +835,74 @@ def build_default_analysis_scope(
         "dataSignals": signals,
         "constraints": constraints,
         "uncertaintyNotes": uncertainty_notes,
-        "scopeReviewIds": [str(review["id"]) for review in reviews],
+        "scopeReviewIds": scope_review_ids,
+        "selectionSummary": scope_selection_summary(
+            analysis_goal,
+            len(scope_review_ids),
+            len(all_review_ids),
+        ),
+        "filteringRules": scope_filtering_rules(
+            analysis_goal,
+            len(scope_review_ids),
+            len(all_review_ids),
+        ),
+        "excludedReviewIds": [
+            review_id for review_id in all_review_ids if review_id not in scope_review_ids
+        ],
     }
+
+
+def scope_selection_summary(
+    analysis_goal: str,
+    selected_count: int,
+    total_count: int,
+) -> str:
+    if total_count == 0:
+        return "当前没有清洗后评论可纳入分析。"
+
+    if selected_count == total_count:
+        if total_count <= 5:
+            return (
+                f"清洗后只有 {total_count} 条评论，系统保留全部评论以避免过度过滤。"
+            )
+        if not analysis_goal_terms(analysis_goal):
+            return (
+                f"分析目标没有命中内置范围关键词，系统使用全部 {total_count} 条清洗后评论。"
+            )
+        return f"当前目标相关信号覆盖全部 {total_count} 条清洗后评论。"
+
+    return (
+        f"系统根据分析目标从 {total_count} 条清洗后评论中选入 {selected_count} 条，"
+        f"排除 {total_count - selected_count} 条低相关评论。"
+    )
+
+
+def scope_filtering_rules(
+    analysis_goal: str,
+    selected_count: int,
+    total_count: int,
+) -> list[str]:
+    rules = [
+        "先移除标题和正文都为空的评论，并按标题与正文指纹去重。",
+    ]
+    goal_terms = analysis_goal_terms(analysis_goal)
+
+    if total_count == 0:
+        rules.append("没有评论通过清洗，因此不会生成无证据发现、需求或测试用例。")
+        return rules
+
+    if total_count <= 5:
+        rules.append("评论数不超过 5 条时保留全部评论，避免样本过小导致误删证据。")
+    elif goal_terms:
+        rules.append(f"优先纳入命中目标关键词的评论：{', '.join(goal_terms)}。")
+        rules.append("低评分、版本号和订阅/付费语境会作为附加相关性信号。")
+    else:
+        rules.append("目标未命中订阅、训练、版本或低评分等内置关键词时保留全部评论。")
+
+    if 0 < selected_count < total_count:
+        rules.append("范围收敛后仍会补入相反评分段的一条评论，用于保留潜在冲突证据。")
+
+    return rules
 
 
 def select_scope_reviews(
@@ -701,14 +1035,29 @@ def normalize_analysis_scope(
     scope_payload: object,
     analysis_goal: str,
     reviews: list[dict[str, object]],
+    all_reviews: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    default_scope = build_default_analysis_scope(analysis_goal, reviews)
+    default_scope = build_default_analysis_scope(analysis_goal, reviews, all_reviews)
     if not isinstance(scope_payload, dict):
         return default_scope
 
     focus_summary = str(
         scope_payload.get("focusSummary") or default_scope["focusSummary"]
     ).strip()
+    all_review_rows = all_reviews if all_reviews is not None else reviews
+    valid_scope_review_ids = {
+        str(review["id"]) for review in reviews
+    }
+    scope_review_ids = [
+        review_id
+        for review_id in sanitize_string_list(
+            scope_payload.get("scopeReviewIds"),
+            default_scope["scopeReviewIds"],
+        )
+        if review_id in valid_scope_review_ids
+    ] or list(default_scope["scopeReviewIds"])
+    all_review_ids = [str(review["id"]) for review in all_review_rows]
+
     return {
         "requestedGoal": analysis_goal.strip() or default_scope["requestedGoal"],
         "focusSummary": focus_summary or default_scope["focusSummary"],
@@ -728,10 +1077,20 @@ def normalize_analysis_scope(
             scope_payload.get("uncertaintyNotes"),
             default_scope["uncertaintyNotes"],
         ),
-        "scopeReviewIds": sanitize_string_list(
-            scope_payload.get("scopeReviewIds"),
-            default_scope["scopeReviewIds"],
+        "scopeReviewIds": scope_review_ids,
+        "selectionSummary": scope_selection_summary(
+            analysis_goal,
+            len(scope_review_ids),
+            len(all_review_ids),
         ),
+        "filteringRules": scope_filtering_rules(
+            analysis_goal,
+            len(scope_review_ids),
+            len(all_review_ids),
+        ),
+        "excludedReviewIds": [
+            review_id for review_id in all_review_ids if review_id not in scope_review_ids
+        ],
     }
 
 
@@ -979,32 +1338,6 @@ def data_limitations(reviews: list[dict[str, object]]) -> list[str]:
     return limitations
 
 
-def generate_product_artifacts(
-    analysis_goal: str,
-    analysis_scope: dict[str, object],
-    findings: list[dict[str, object]],
-    reviews: list[dict[str, object]],
-) -> dict[str, object]:
-    requirements = generate_requirements(findings, analysis_scope)
-    test_cases = generate_test_cases(requirements)
-    version_plan = generate_version_plan(requirements, analysis_scope)
-
-    return {
-        "findings": findings,
-        "requirements": requirements,
-        "versionPlan": version_plan,
-        "prd": generate_prd(analysis_goal, analysis_scope, requirements, version_plan),
-        "testCases": test_cases,
-        "dataLimitations": data_limitations(reviews),
-        "traceabilityValidation": validate_traceability(
-            findings,
-            reviews,
-            requirements,
-            test_cases,
-        ),
-    }
-
-
 def generate_requirements(
     findings: list[dict[str, object]],
     analysis_scope: dict[str, object],
@@ -1214,26 +1547,6 @@ def build_stage_reports(
 ) -> list[dict[str, object]]:
     return [
         {
-            "name": "scope",
-            "status": STAGE_STATUS_COMPLETE,
-            "summary": str(analysis_scope["focusSummary"]),
-            "details": [
-                f"用户目标：{analysis_scope['requestedGoal']}",
-                *[f"聚焦：{item}" for item in analysis_scope["focusAreas"]],
-                *[f"信号：{item}" for item in analysis_scope["dataSignals"]],
-                f"范围样本：{len(scope_reviews)} 条（清洗后共 {len(reviews)} 条）",
-                *[
-                    f"范围评论：{review_id}"
-                    for review_id in analysis_scope["scopeReviewIds"][:5]
-                ],
-            ],
-            "revisions": [
-                *[f"约束：{item}" for item in analysis_scope["constraints"]],
-                *[f"不确定性：{item}" for item in analysis_scope["uncertaintyNotes"]],
-            ],
-            "errors": [],
-        },
-        {
             "name": "reviews",
             "status": STAGE_STATUS_COMPLETE,
             "summary": f"收集到 {len(raw_reviews)} 条原始评论，清洗后保留 {len(reviews)} 条。",
@@ -1263,6 +1576,29 @@ def build_stage_reports(
                     "已按标题与正文归一化指纹去重。",
                 ]
                 if cleaning_summary["duplicateCount"] or cleaning_summary["discardedEmptyCount"]
+            ],
+            "errors": [],
+        },
+        {
+            "name": "scope",
+            "status": STAGE_STATUS_COMPLETE,
+            "summary": str(analysis_scope["focusSummary"]),
+            "details": [
+                f"用户目标：{analysis_scope['requestedGoal']}",
+                f"过滤说明：{analysis_scope['selectionSummary']}",
+                *[f"过滤规则：{item}" for item in analysis_scope["filteringRules"]],
+                *[f"聚焦：{item}" for item in analysis_scope["focusAreas"]],
+                *[f"信号：{item}" for item in analysis_scope["dataSignals"]],
+                f"范围样本：{len(scope_reviews)} 条（清洗后共 {len(reviews)} 条）",
+                *[
+                    f"范围评论：{review_id}"
+                    for review_id in analysis_scope["scopeReviewIds"][:5]
+                ],
+            ],
+            "revisions": [
+                *[f"排除评论：{review_id}" for review_id in analysis_scope["excludedReviewIds"][:5]],
+                *[f"约束：{item}" for item in analysis_scope["constraints"]],
+                *[f"不确定性：{item}" for item in analysis_scope["uncertaintyNotes"]],
             ],
             "errors": [],
         },
@@ -1508,9 +1844,9 @@ def load_fixture_reviews() -> list[dict[str, object]]:
 
 def completed_stages() -> list[dict[str, str]]:
     return [
-        {"name": "scope", "status": STAGE_STATUS_COMPLETE},
         {"name": "reviews", "status": STAGE_STATUS_COMPLETE},
         {"name": "cleaning", "status": STAGE_STATUS_COMPLETE},
+        {"name": "scope", "status": STAGE_STATUS_COMPLETE},
         {"name": "analysis", "status": STAGE_STATUS_COMPLETE},
         {"name": "prd", "status": STAGE_STATUS_COMPLETE},
         {"name": "tests", "status": STAGE_STATUS_COMPLETE},

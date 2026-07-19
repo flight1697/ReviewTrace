@@ -10,9 +10,9 @@ const apiUrl =
   process.env.NEXT_PUBLIC_REVIEWTRACE_API_URL ?? "http://localhost:8000";
 
 export const initialStages = [
-  ["范围", "等待中"],
   ["评论", "等待中"],
   ["清洗", "等待中"],
+  ["范围", "等待中"],
   ["分类结果", "等待中"],
   ["产品需求文档", "等待中"],
   ["测试", "等待中"],
@@ -73,6 +73,9 @@ export type AnalysisScope = {
   constraints: string[];
   uncertaintyNotes: string[];
   scopeReviewIds?: string[];
+  selectionSummary?: string;
+  filteringRules?: string[];
+  excludedReviewIds?: string[];
 };
 
 export type Requirement = {
@@ -175,6 +178,25 @@ export type WorkflowRun = {
 export type WorkflowRequestBody = Record<string, string>;
 export type WorkflowStatus = "idle" | "running" | "failed";
 
+export type WorkflowStreamEvent =
+  | {
+      type: "stage";
+      stage: WorkflowStage;
+      stages?: WorkflowStage[];
+    }
+  | {
+      type: "report";
+      report: StageReport;
+    }
+  | {
+      type: "run";
+      run: WorkflowRun;
+    }
+  | {
+      type: "error";
+      message: string;
+    };
+
 export type ModelStatus = {
   provider: string;
   model: string;
@@ -209,14 +231,30 @@ export function useWorkflowRun() {
   const [run, setRun] = useState<WorkflowRun | null>(null);
   const [status, setStatus] = useState<WorkflowStatus>("idle");
   const [error, setError] = useState("");
+  const [progressStages, setProgressStages] = useState<WorkflowStage[]>([]);
+  const [stageReports, setStageReports] = useState<StageReport[]>([]);
 
   async function requestWorkflow(body: WorkflowRequestBody) {
     setStatus("running");
     setError("");
     setRun(null);
+    setProgressStages([]);
+    setStageReports([]);
 
     try {
-      setRun(await requestWorkflowRun(body));
+      setRun(
+        await requestWorkflowRunStream(body, (event) => {
+          if (event.type === "stage") {
+            setProgressStages(event.stages ?? [event.stage]);
+          }
+
+          if (event.type === "report") {
+            setStageReports((reports) =>
+              upsertStageReport(reports, event.report),
+            );
+          }
+        }),
+      );
       setStatus("idle");
     } catch (caughtError) {
       setStatus("failed");
@@ -230,6 +268,8 @@ export function useWorkflowRun() {
 
   function failWorkflow(caughtError: unknown, fallbackMessage: string) {
     setRun(null);
+    setProgressStages([]);
+    setStageReports([]);
     setStatus("failed");
     setError(
       caughtError instanceof Error ? caughtError.message : fallbackMessage,
@@ -239,8 +279,10 @@ export function useWorkflowRun() {
   return {
     error,
     failWorkflow,
+    progressStages,
     requestWorkflow,
     run,
+    stageReports,
     status,
   };
 }
@@ -261,6 +303,79 @@ export async function requestWorkflowRun(
   }
 
   return (await response.json()) as WorkflowRun;
+}
+
+export async function requestWorkflowRunStream(
+  body: WorkflowRequestBody,
+  onEvent: (event: WorkflowStreamEvent) => void,
+): Promise<WorkflowRun> {
+  const response = await fetch(`${apiUrl}/workflow/runs/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(await workflowErrorMessage(response));
+  }
+
+  if (!response.body) {
+    return (await response.json()) as WorkflowRun;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalRun: WorkflowRun | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      const event = parseWorkflowStreamEvent(line);
+      if (!event) {
+        continue;
+      }
+
+      if (event.type === "error") {
+        throw new Error(event.message || "工作流请求失败");
+      }
+
+      onEvent(event);
+
+      if (event.type === "run") {
+        finalRun = event.run;
+      }
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  const finalEvent = parseWorkflowStreamEvent(buffer);
+  if (finalEvent) {
+    if (finalEvent.type === "error") {
+      throw new Error(finalEvent.message || "工作流请求失败");
+    }
+
+    onEvent(finalEvent);
+
+    if (finalEvent.type === "run") {
+      finalRun = finalEvent.run;
+    }
+  }
+
+  if (!finalRun) {
+    throw new Error("工作流流式响应缺少最终报告");
+  }
+
+  return finalRun;
 }
 
 export async function requestModelStatus(): Promise<ModelStatus> {
@@ -288,9 +403,17 @@ export async function requestModelStatus(): Promise<ModelStatus> {
 export function visibleWorkflowStages(
   run: WorkflowRun | null,
   status: WorkflowStatus,
+  progressStages: WorkflowStage[] = [],
 ) {
   if (run) {
     return run.stages.map((stage) => [
+      stageLabels[stage.name] ?? stage.name,
+      statusLabels[stage.status] ?? stage.status,
+    ]);
+  }
+
+  if (progressStages.length) {
+    return progressStages.map((stage) => [
       stageLabels[stage.name] ?? stage.name,
       statusLabels[stage.status] ?? stage.status,
     ]);
@@ -334,4 +457,27 @@ async function workflowErrorMessage(response: Response) {
   } catch {
     return "工作流请求失败";
   }
+}
+
+function parseWorkflowStreamEvent(line: string): WorkflowStreamEvent | null {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return JSON.parse(trimmed) as WorkflowStreamEvent;
+}
+
+function upsertStageReport(
+  reports: StageReport[],
+  nextReport: StageReport,
+): StageReport[] {
+  const index = reports.findIndex((report) => report.name === nextReport.name);
+  if (index === -1) {
+    return [...reports, nextReport];
+  }
+
+  return reports.map((report, reportIndex) =>
+    reportIndex === index ? nextReport : report,
+  );
 }

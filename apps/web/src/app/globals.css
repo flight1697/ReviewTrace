@@ -496,6 +496,80 @@ textarea:focus {
   background: #fff7ed;
 }
 
+.notice.warning {
+  border-color: #fde68a;
+  color: #92400e;
+  background: #fffbeb;
+}
+
+.empty-live-notice {
+  align-items: flex-start;
+}
+
+.empty-live-notice strong {
+  display: block;
+  color: #78350f;
+}
+
+.empty-live-notice p {
+  margin-top: 5px;
+  line-height: 1.6;
+}
+
+.recovery-actions,
+.sample-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.recovery-actions {
+  margin-top: 10px;
+}
+
+.recovery-actions button,
+.recovery-actions span,
+.sample-downloads a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.recovery-actions button {
+  color: #ffffff;
+  background: #b45309;
+  cursor: pointer;
+}
+
+.recovery-actions button:hover {
+  background: #92400e;
+}
+
+.recovery-actions span {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.sample-downloads {
+  max-width: 640px;
+  align-items: center;
+}
+
+.sample-downloads a {
+  color: #0f766e;
+  background: #e6fffb;
+  text-decoration: none;
+}
+
+.sample-downloads span {
+  color: #64748b;
+  font-size: 12px;
+}
+
 .dashboard {
   display: grid;
   gap: 20px;
@@ -631,6 +705,35 @@ textarea:focus {
   border-radius: 18px;
   padding: 16px;
   background: linear-gradient(180deg, #ffffff 0%, #fbfdfc 100%);
+}
+
+.empty-result-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  border: 1px solid #fde68a;
+  border-radius: 18px;
+  padding: 16px;
+  color: #92400e;
+  background: #fffbeb;
+}
+
+.empty-result-card strong {
+  color: #78350f;
+}
+
+.empty-result-card p {
+  margin-top: 5px;
+  line-height: 1.55;
+}
+
+.warning-card {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.warning-card h4 {
+  color: #78350f;
 }
 
 .finding-card h4,

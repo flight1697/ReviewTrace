@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from reviewtrace_api import workflow
@@ -144,9 +146,9 @@ def test_fixture_workflow_returns_traceable_artifacts():
     assert body["source"]["label"] == "缓存示例数据集"
     assert body["scope"]["analysisGoal"] == "关注订阅转化相关投诉"
     assert body["stages"] == [
-        {"name": "scope", "status": "complete"},
         {"name": "reviews", "status": "complete"},
         {"name": "cleaning", "status": "complete"},
+        {"name": "scope", "status": "complete"},
         {"name": "analysis", "status": "complete"},
         {"name": "prd", "status": "complete"},
         {"name": "tests", "status": "complete"},
@@ -179,13 +181,48 @@ def test_fixture_workflow_returns_traceable_artifacts():
     }
     assert body["analysisScope"]["scopeReviewIds"]
     assert any(
-        detail.startswith("范围样本：") for detail in body["stageReports"][0]["details"]
+        detail.startswith("范围样本：") for detail in body["stageReports"][2]["details"]
     )
     assert body["stageReports"][4]["details"][0].startswith("PRD 目标：")
     assert body["stageReports"][6]["summary"] == "追溯校验通过"
     assert body["validationMessages"] == [
         "所有发现、需求和测试用例都已关联示例评论证据。"
     ]
+
+
+def test_workflow_stream_emits_stage_progress_before_final_run():
+    client = TestClient(app)
+
+    with client.stream(
+        "POST",
+        "/workflow/runs/stream",
+        json={
+            "appStoreUrl": "https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684",
+            "analysisGoal": "关注订阅转化相关投诉",
+            "sourceMode": "fixture",
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = [
+            json.loads(line)
+            for line in response.iter_lines()
+            if line
+        ]
+
+    stage_events = [event for event in events if event["type"] == "stage"]
+    report_events = [event for event in events if event["type"] == "report"]
+    final_events = [event for event in events if event["type"] == "run"]
+
+    assert stage_events[0]["stage"] == {"name": "reviews", "status": "running"}
+    assert any(
+        event["stage"] == {"name": "analysis", "status": "running"}
+        for event in stage_events
+    )
+    assert report_events[0]["report"]["name"] == "reviews"
+    assert final_events[0] == events[-1]
+    assert final_events[0]["run"]["runId"] == "fixture-run-001"
+    assert final_events[0]["run"]["analysisScope"]["selectionSummary"]
+    assert final_events[0]["run"]["analysisScope"]["filteringRules"]
 
 
 def test_live_app_store_reviews_run_through_same_workflow(monkeypatch):
@@ -425,15 +462,15 @@ def test_imported_json_reviews_run_through_workflow():
     assert body["analysisScope"]["scopeReviewIds"] == ["json-001", "json-002"]
     assert body["prd"]["scopeSummary"] == body["analysisScope"]
     assert [report["name"] for report in body["stageReports"]] == [
-        "scope",
         "reviews",
         "cleaning",
+        "scope",
         "analysis",
         "prd",
         "tests",
         "validation",
     ]
-    assert body["stageReports"][0]["summary"] == "关注低评分评论"
+    assert body["stageReports"][2]["summary"] == "关注低评分评论"
 
 
 def test_imported_csv_reviews_run_through_workflow():
@@ -589,7 +626,18 @@ def test_openai_provider_can_drive_semantic_findings(monkeypatch):
         "model": "gpt-5.6-sol",
         "modelDriven": True,
     }
-    assert body["analysisScope"] == {
+    assert {
+        key: body["analysisScope"][key]
+        for key in [
+            "requestedGoal",
+            "focusSummary",
+            "focusAreas",
+            "dataSignals",
+            "constraints",
+            "uncertaintyNotes",
+            "scopeReviewIds",
+        ]
+    } == {
         "requestedGoal": "关注新手训练可用性",
         "focusSummary": "新手训练入口解释不足",
         "focusAreas": ["新手训练可用性"],
@@ -598,6 +646,11 @@ def test_openai_provider_can_drive_semantic_findings(monkeypatch):
         "uncertaintyNotes": ["样本量为 1 条"],
         "scopeReviewIds": ["json-001"],
     }
+    assert body["analysisScope"]["selectionSummary"] == (
+        "清洗后只有 1 条评论，系统保留全部评论以避免过度过滤。"
+    )
+    assert body["analysisScope"]["filteringRules"]
+    assert body["analysisScope"]["excludedReviewIds"] == []
     assert body["findings"] == [
         {
             "id": "finding-onboarding-clarity",

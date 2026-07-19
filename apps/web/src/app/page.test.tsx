@@ -29,6 +29,19 @@ describe("ReviewTrace 首页", () => {
     expect(screen.getByText("测试")).toBeInTheDocument();
   });
 
+  it("为导入模式提供 JSON 和 CSV 样例下载入口", () => {
+    render(<Home />);
+
+    fireEvent.click(screen.getByRole("button", { name: /导入文件/i }));
+
+    expect(
+      screen.getByRole("link", { name: "下载 JSON 样例" }),
+    ).toHaveAttribute("download", "reviewtrace-sample-reviews.json");
+    expect(
+      screen.getByRole("link", { name: "下载 CSV 样例" }),
+    ).toHaveAttribute("download", "reviewtrace-sample-reviews.csv");
+  });
+
   it("在模型 key 缺失时展示确定性兜底提示", async () => {
     vi.stubGlobal(
       "fetch",
@@ -302,12 +315,120 @@ describe("ReviewTrace 首页", () => {
       screen.getByText(/围绕「关注订阅转化相关投诉」/),
     ).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
-      "http://localhost:8000/workflow/runs",
+      "http://localhost:8000/workflow/runs/stream",
       expect.objectContaining({
         body: expect.stringContaining('"sourceMode":"live"'),
         method: "POST",
       }),
     );
+  });
+
+  it("在流式响应过程中展示阶段进度，不等待最终报告回放", async () => {
+    let finishStream: (() => void) | undefined;
+    const encoder = new TextEncoder();
+    const finalRun = emptyLiveWorkflowRun();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            `${JSON.stringify({
+              type: "stage",
+              stage: { name: "reviews", status: "running" },
+              stages: [{ name: "reviews", status: "running" }],
+            })}\n`,
+          ),
+        );
+        controller.enqueue(
+          encoder.encode(
+            `${JSON.stringify({
+              type: "report",
+              report: {
+                name: "reviews",
+                status: "running",
+                summary: "正在读取评论源。",
+                details: ["等待 Apple RSS 或导入数据返回。"],
+                revisions: [],
+                errors: [],
+              },
+            })}\n`,
+          ),
+        );
+        finishStream = () => {
+          controller.enqueue(
+            encoder.encode(
+              `${JSON.stringify({
+                type: "run",
+                run: finalRun,
+              })}\n`,
+            ),
+          );
+          controller.close();
+        };
+      },
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url.endsWith("/config/model")) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              provider: "stub",
+              model: "deterministic-import-summary",
+              keyConfigured: false,
+              modelDrivenAvailable: false,
+              fallbackAvailable: true,
+              message: "当前使用确定性兜底分析。",
+            }),
+          });
+        }
+
+        return Promise.resolve({
+          ok: true,
+          body: stream,
+        });
+      }),
+    );
+
+    render(<Home />);
+
+    fireEvent.click(screen.getByRole("button", { name: /生成分析报告/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("正在读取评论源。")).toBeInTheDocument();
+    });
+    expect(
+      screen.getByRole("region", { name: "工作流阶段" }),
+    ).toHaveTextContent("运行中");
+
+    finishStream?.();
+
+    await waitFor(() => {
+      expect(screen.getByText("运行编号：live-empty")).toBeInTheDocument();
+    });
+  });
+
+  it("live 源返回空数据时展示醒目的恢复建议", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => emptyLiveWorkflowRun(),
+      }),
+    );
+
+    render(<Home />);
+
+    fireEvent.click(screen.getByRole("button", { name: /生成分析报告/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("alert", { name: "live 源空数据提示" }),
+      ).toHaveTextContent("Apple RSS 暂时没有返回可分析评论");
+    });
+    expect(screen.getByText("改用缓存示例")).toBeInTheDocument();
+    expect(screen.getByText("导入 JSON / CSV 评论")).toBeInTheDocument();
   });
 
   it("导入 JSON 文件并展示导入工作流结果", async () => {
@@ -511,7 +632,7 @@ describe("ReviewTrace 首页", () => {
     fireEvent.click(screen.getByRole("tab", { name: "追溯校验" }));
     expect(screen.getAllByText(/追溯校验：通过/).length).toBeGreaterThan(0);
     expect(fetch).toHaveBeenCalledWith(
-      "http://localhost:8000/workflow/runs",
+      "http://localhost:8000/workflow/runs/stream",
       expect.objectContaining({
         body: expect.stringContaining('"sourceMode":"import"'),
         method: "POST",
@@ -547,3 +668,88 @@ describe("ReviewTrace 首页", () => {
     ).toBeInTheDocument();
   });
 });
+
+function emptyLiveWorkflowRun() {
+  return {
+    runId: "live-empty",
+    source: { mode: "live", label: "U.S. App Store 最新评论" },
+    scope: {
+      appStoreUrl: "https://apps.apple.com/us/app/example/id123456789",
+      analysisGoal: "关注订阅转化相关投诉",
+      storefront: "us",
+    },
+    stages: [
+      { name: "scope", status: "complete" },
+      { name: "reviews", status: "complete" },
+      { name: "cleaning", status: "complete" },
+      { name: "analysis", status: "complete" },
+      { name: "prd", status: "complete" },
+      { name: "tests", status: "complete" },
+      { name: "validation", status: "complete" },
+    ],
+    rawReviews: [],
+    reviews: [],
+    cleaningSummary: {
+      inputCount: 0,
+      retainedCount: 0,
+      duplicateCount: 0,
+      discardedEmptyCount: 0,
+    },
+    ratingSummary: {
+      averageRating: 0,
+      ratingCounts: {},
+    },
+    analysisSummary: {
+      provider: "stub",
+      model: "deterministic-import-summary",
+      modelDriven: false,
+    },
+    analysisScope: {
+      requestedGoal: "关注订阅转化相关投诉",
+      focusSummary: "关注订阅转化相关投诉",
+      focusAreas: ["综合用户反馈"],
+      dataSignals: ["样本量 0 条，清洗后结果可直接追溯到原始评论。"],
+      constraints: ["只使用已采集评论中的证据。"],
+      uncertaintyNotes: ["当前没有可分析评论。"],
+      scopeReviewIds: [],
+      selectionSummary: "当前没有清洗后评论可纳入分析。",
+      filteringRules: ["清洗后评论必须包含标题或正文。"],
+      excludedReviewIds: [],
+    },
+    stageReports: [],
+    findings: [],
+    requirements: [],
+    versionPlan: { versions: [] },
+    prd: {
+      title: "ReviewTrace 产品需求文档草案",
+      objective: "围绕「关注订阅转化相关投诉」回应已导入评论中的高证据问题。",
+      scopeSummary: {
+        requestedGoal: "关注订阅转化相关投诉",
+        focusSummary: "关注订阅转化相关投诉",
+        focusAreas: ["综合用户反馈"],
+        dataSignals: ["样本量 0 条，清洗后结果可直接追溯到原始评论。"],
+        constraints: ["只使用已采集评论中的证据。"],
+        uncertaintyNotes: ["当前没有可分析评论。"],
+        scopeReviewIds: [],
+        selectionSummary: "当前没有清洗后评论可纳入分析。",
+        filteringRules: ["清洗后评论必须包含标题或正文。"],
+        excludedReviewIds: [],
+      },
+      versions: [],
+      requirements: [],
+      successMetrics: [],
+      assumptions: [],
+    },
+    testCases: [],
+    dataLimitations: ["没有获取到可分析评论，请检查链接或改用导入评论。"],
+    traceabilityValidation: {
+      status: "passed",
+      unsupportedFindingIds: [],
+      unsupportedRequirementIds: [],
+      unsupportedTestCaseIds: [],
+    },
+    validationMessages: [
+      "已从 Apple RSS 评论源获取最新公开评论；若评论数量较少，请结合导入数据复核。",
+    ],
+  };
+}
