@@ -158,6 +158,7 @@ export function useWorkflowRun() {
   async function requestWorkflow(body: WorkflowRequestBody) {
     setStatus("running");
     setError("");
+    setRun(null);
 
     try {
       setRun(await requestWorkflowRun(body));
@@ -173,6 +174,7 @@ export function useWorkflowRun() {
   }
 
   function failWorkflow(caughtError: unknown, fallbackMessage: string) {
+    setRun(null);
     setStatus("failed");
     setError(
       caughtError instanceof Error ? caughtError.message : fallbackMessage,
@@ -221,6 +223,13 @@ export function visibleWorkflowStages(
     return initialStages.map(([name], index) => [
       name,
       index === 0 ? "运行中" : "等待中",
+    ]);
+  }
+
+  if (status === "failed") {
+    return initialStages.map(([name], index) => [
+      name,
+      index === 0 ? "失败" : "等待中",
     ]);
   }
 

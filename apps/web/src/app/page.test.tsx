@@ -17,8 +17,11 @@ describe("ReviewTrace 首页", () => {
     ).toBeInTheDocument();
     expect(screen.getByLabelText("App Store 链接")).toBeInTheDocument();
     expect(screen.getByLabelText("分析目标")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /开始分析/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "使用缓存示例" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /生成分析报告/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /缓存示例/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /导入文件/i })).toBeInTheDocument();
     expect(screen.getByText("范围")).toBeInTheDocument();
     expect(screen.getByText("评论")).toBeInTheDocument();
     expect(screen.getByText("证据")).toBeInTheDocument();
@@ -167,10 +170,10 @@ describe("ReviewTrace 首页", () => {
 
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /开始分析/i }));
+    fireEvent.click(screen.getByRole("button", { name: /生成分析报告/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("live-839285684")).toBeInTheDocument();
+      expect(screen.getByText("运行编号：live-839285684")).toBeInTheDocument();
     });
     expect(
       screen.getByText((content) =>
@@ -180,11 +183,15 @@ describe("ReviewTrace 首页", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getAllByText("fixture-review-001").length).toBeGreaterThan(0);
-    expect(screen.getByText("冲突证据：")).toBeInTheDocument();
+    expect(screen.getByText("冲突证据")).toBeInTheDocument();
     expect(
       screen.getByText(/购买前已经看到了价格、包含功能和取消方式/),
     ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "版本计划" }));
     expect(screen.getByText("版本 1：证据支撑的核心改进")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "PRD 草案" }));
     expect(
       screen.getByText(/围绕「关注订阅转化相关投诉」/),
     ).toBeInTheDocument();
@@ -334,6 +341,8 @@ describe("ReviewTrace 首页", () => {
 
     render(<Home />);
 
+    fireEvent.click(screen.getByRole("button", { name: /导入文件/i }));
+
     const file = new File(
       [
         JSON.stringify({
@@ -356,17 +365,25 @@ describe("ReviewTrace 首页", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("import-run-001")).toBeInTheDocument();
+      expect(screen.getByText("运行编号：import-run-001")).toBeInTheDocument();
     });
     expect(screen.getByText("导入的 JSON 数据集")).toBeInTheDocument();
     expect(screen.getByText("训练计划太突然")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "版本计划" }));
     expect(screen.getByText("版本 2：补充验证后的增强项")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "PRD 草案" }));
     expect(screen.getByText(/产品需求文档草案/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "QA 测试用例" }));
     expect(
       screen.getByText("准备覆盖源评论 json-001 所描述问题的用户情境。"),
     ).toBeInTheDocument();
     expect(screen.getByText(/源评论指出的问题被可验证地解决/)).toBeInTheDocument();
-    expect(screen.getByText(/追溯校验：通过/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "追溯校验" }));
+    expect(screen.getAllByText(/追溯校验：通过/).length).toBeGreaterThan(0);
     expect(fetch).toHaveBeenCalledWith(
       "http://localhost:8000/workflow/runs",
       expect.objectContaining({
@@ -389,12 +406,18 @@ describe("ReviewTrace 首页", () => {
 
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: /开始分析/i }));
+    fireEvent.click(screen.getByRole("button", { name: /生成分析报告/i }));
 
     await waitFor(() => {
       expect(
         screen.getByText("当前仅支持 U.S. App Store 链接。"),
       ).toBeInTheDocument();
     });
+    expect(
+      screen.getByRole("region", { name: "工作流阶段" }),
+    ).toHaveTextContent("失败");
+    expect(
+      screen.getByRole("region", { name: "空状态" }),
+    ).toBeInTheDocument();
   });
 });
