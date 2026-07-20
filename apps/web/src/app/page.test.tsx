@@ -199,6 +199,7 @@ const workflowRunResponse = {
 
 describe("ReviewTrace 工作台", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -209,6 +210,7 @@ describe("ReviewTrace 工作台", () => {
   });
 
   afterEach(() => {
+    window.localStorage.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -254,6 +256,62 @@ describe("ReviewTrace 工作台", () => {
     render(<Home />);
 
     expect(screen.queryByText("46%")).not.toBeInTheDocument();
+  });
+
+  it("评论页支持真实搜索、评分和重复项筛选", () => {
+    render(<Home />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "评论原始与清洗后的评论语料",
+      }),
+    );
+
+    fireEvent.change(screen.getByLabelText("搜索评论"), {
+      target: { value: "REV-01007" },
+    });
+    expect(screen.getByRole("button", { name: "REV-01007" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "REV-00421" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("搜索评论"), {
+      target: { value: "" },
+    });
+    fireEvent.change(screen.getByLabelText("重复项筛选"), {
+      target: { value: "only" },
+    });
+    expect(screen.getByRole("button", { name: "REV-00818" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "REV-00421" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("评分筛选"), {
+      target: { value: "high" },
+    });
+    expect(screen.getByText("没有符合筛选条件的评论。")).toBeInTheDocument();
+  });
+
+  it("保存草稿、折叠侧栏和 PRD 目录都有实际状态反馈", () => {
+    render(<Home />);
+
+    fireEvent.change(screen.getByLabelText("分析目标"), {
+      target: { value: "只关注取消订阅路径" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /保存草稿/ }));
+    expect(window.localStorage.getItem("reviewtrace-draft")).toContain(
+      "只关注取消订阅路径",
+    );
+    expect(screen.getByText(/草稿已保存/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "折叠导航" }));
+    const expandNavButton = screen.getByRole("button", { name: "展开导航" });
+    expect(expandNavButton).toBeInTheDocument();
+    fireEvent.click(expandNavButton);
+
+    fireEvent.click(screen.getByRole("button", { name: "收起检查器" }));
+    expect(screen.getByRole("button", { name: /检查器/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "PRD v1结构化需求与文档草案" }));
+    const versionsButton = screen.getByRole("button", { name: "版本计划" });
+    fireEvent.click(versionsButton);
+    expect(versionsButton).toHaveClass("is-active");
   });
 
   it("切换到 Reviews 与 Findings 页面后仍然能看见核心数据", () => {
