@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import Home from "./page";
+import { buildWorkbenchModel } from "./workbench-view-model";
+import { parseWorkflowRun } from "./workflow";
 
 const modelStatusResponse = {
   provider: "deepseek",
@@ -363,5 +365,30 @@ describe("ReviewTrace 工作台", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "追溯矩阵追溯矩阵与关系图" }));
     expect(screen.getByRole("button", { name: /发现与评论链路已完成追溯/ })).toBeInTheDocument();
+  });
+
+  it("通过单一 WorkflowRun 契约入口解析后端运行结果", () => {
+    expect(parseWorkflowRun(workflowRunResponse).runId).toBe("import-run-001");
+    expect(() =>
+      parseWorkflowRun({
+        ...workflowRunResponse,
+        testCases: undefined,
+      }),
+    ).toThrow("工作流运行格式无效");
+  });
+
+  it("通过工作台展示模型入口构建交付物数据", () => {
+    const model = buildWorkbenchModel(parseWorkflowRun(workflowRunResponse));
+
+    expect(model.rawReviewRows[0]).toMatchObject({
+      id: "json-001",
+      source: "导入",
+      theme: "订阅说明需要在购买前更清楚地解释。",
+    });
+    expect(model.findingCards[0].id).toBe("finding-subscription-copy");
+    expect(model.requirementCards[0].id).toBe("requirement-subscription-copy");
+    expect(model.testCaseCards[0].id).toBe("test-subscription-copy");
+    expect(model.validationIssues[0].status).toBe("有效");
+    expect(model.summaryMetrics.find((metric) => metric.label === "模型发现")?.value).toBe("1");
   });
 });

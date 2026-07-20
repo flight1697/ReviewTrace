@@ -321,7 +321,7 @@ export async function requestWorkflowRun(
     throw new Error(await workflowErrorMessage(response));
   }
 
-  return (await response.json()) as WorkflowRun;
+  return parseWorkflowRun(await response.json());
 }
 
 export async function requestWorkflowRunById(runId: string): Promise<WorkflowRun> {
@@ -331,7 +331,7 @@ export async function requestWorkflowRunById(runId: string): Promise<WorkflowRun
     throw new Error(await workflowErrorMessage(response));
   }
 
-  return (await response.json()) as WorkflowRun;
+  return parseWorkflowRun(await response.json());
 }
 
 export async function requestWorkflowRunSummaries(): Promise<WorkflowRunSummary[]> {
@@ -362,7 +362,7 @@ export async function requestWorkflowRunStream(
   }
 
   if (!response.body) {
-    return (await response.json()) as WorkflowRun;
+    return parseWorkflowRun(await response.json());
   }
 
   const reader = response.body.getReader();
@@ -389,7 +389,7 @@ export async function requestWorkflowRunStream(
       onEvent(event);
 
       if (event.type === "run") {
-        finalRun = event.run;
+        finalRun = parseWorkflowRun(event.run);
       }
     }
 
@@ -407,7 +407,7 @@ export async function requestWorkflowRunStream(
     onEvent(finalEvent);
 
     if (finalEvent.type === "run") {
-      finalRun = finalEvent.run;
+      finalRun = parseWorkflowRun(finalEvent.run);
     }
   }
 
@@ -505,7 +505,57 @@ function parseWorkflowStreamEvent(line: string): WorkflowStreamEvent | null {
     return null;
   }
 
-  return JSON.parse(trimmed) as WorkflowStreamEvent;
+  const event = JSON.parse(trimmed) as WorkflowStreamEvent;
+  if (event.type === "run") {
+    return {
+      ...event,
+      run: parseWorkflowRun(event.run),
+    };
+  }
+
+  return event;
+}
+
+export function parseWorkflowRun(body: unknown): WorkflowRun {
+  if (!isRecord(body)) {
+    throw new Error("工作流运行格式无效");
+  }
+
+  const requiredArrays = [
+    "stages",
+    "rawReviews",
+    "reviews",
+    "stageReports",
+    "findings",
+    "requirements",
+    "testCases",
+    "dataLimitations",
+    "validationMessages",
+  ];
+  const requiredObjects = [
+    "source",
+    "scope",
+    "cleaningSummary",
+    "ratingSummary",
+    "analysisSummary",
+    "versionPlan",
+    "prd",
+    "traceabilityValidation",
+  ];
+
+  if (
+    typeof body.runId !== "string" ||
+    !requiredArrays.every((key) => Array.isArray(body[key])) ||
+    !requiredObjects.every((key) => isRecord(body[key]))
+  ) {
+    throw new Error("工作流运行格式无效");
+  }
+
+  return body as WorkflowRun;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function upsertStageReport(

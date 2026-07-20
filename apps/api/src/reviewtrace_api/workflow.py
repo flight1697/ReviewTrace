@@ -63,6 +63,23 @@ class ReviewSourceBatch:
     analysis_override: Callable[[list[dict[str, object]]], dict[str, object]] | None = None
 
 
+@dataclass(frozen=True)
+class TraceableArtifactBundle:
+    requirements: list[dict[str, object]]
+    version_plan: dict[str, object]
+    prd: dict[str, object]
+    test_cases: list[dict[str, object]]
+    traceability_validation: dict[str, object]
+
+
+@dataclass(frozen=True)
+class ScopeDecision:
+    selected_reviews: list[dict[str, object]]
+    analysis_scope: dict[str, object]
+    report_details: list[str]
+    report_revisions: list[str]
+
+
 class ReviewSourceAdapter(Protocol):
     def collect(self, request: WorkflowRunRequest) -> ReviewSourceBatch:
         pass
@@ -252,22 +269,17 @@ def complete_review_workflow_events(
     )
 
     yield stage_event("scope", STAGE_STATUS_RUNNING)
-    scope_reviews = select_scope_reviews(reviews, analysis_goal)
-    default_scope = build_default_analysis_scope(
-        analysis_goal,
-        scope_reviews,
-        reviews,
-    )
+    scope_selector = ScopeSelector()
+    scope_decision = scope_selector.select(reviews, analysis_goal)
+    scope_reviews = scope_decision.selected_reviews
+    default_scope = scope_decision.analysis_scope
     yield stage_event("scope", STAGE_STATUS_COMPLETE)
     yield report_event(
         "scope",
         STAGE_STATUS_COMPLETE,
         str(default_scope["selectionSummary"]),
-        [
-            f"范围评论：{', '.join(default_scope['scopeReviewIds']) or '无'}",
-            *[f"规则：{rule}" for rule in default_scope["filteringRules"]],
-        ],
-        revisions=[*[f"不确定性：{note}" for note in default_scope["uncertaintyNotes"]]],
+        scope_decision.report_details,
+        revisions=scope_decision.report_revisions,
     )
 
     yield stage_event("analysis", STAGE_STATUS_RUNNING)
@@ -276,7 +288,7 @@ def complete_review_workflow_events(
         if analysis_override
         else analyze_reviews(scope_reviews, analysis_goal)
     )
-    analysis_scope = normalize_analysis_scope(
+    analysis_scope = scope_selector.normalize(
         analysis.get("scope"),
         analysis_goal,
         scope_reviews,
@@ -295,9 +307,17 @@ def complete_review_workflow_events(
     )
 
     yield stage_event("prd", STAGE_STATUS_RUNNING)
-    requirements = generate_requirements(findings, analysis_scope)
-    version_plan = generate_version_plan(requirements, analysis_scope)
-    prd = generate_prd(analysis_goal, analysis_scope, requirements, version_plan)
+    artifact_bundle = TraceableArtifactBuilder(
+        test_case_generator=generate_test_cases,
+    ).build(
+        findings=findings,
+        analysis_scope=analysis_scope,
+        reviews=reviews,
+        analysis_goal=analysis_goal,
+    )
+    requirements = artifact_bundle.requirements
+    version_plan = artifact_bundle.version_plan
+    prd = artifact_bundle.prd
     yield stage_event("prd", STAGE_STATUS_COMPLETE)
     yield report_event(
         "prd",
@@ -308,7 +328,7 @@ def complete_review_workflow_events(
     )
 
     yield stage_event("tests", STAGE_STATUS_RUNNING)
-    test_cases = generate_test_cases(requirements)
+    test_cases = artifact_bundle.test_cases
     yield stage_event("tests", STAGE_STATUS_COMPLETE)
     yield report_event(
         "tests",
@@ -322,12 +342,7 @@ def complete_review_workflow_events(
     )
 
     yield stage_event("validation", STAGE_STATUS_RUNNING)
-    traceability_validation = validate_traceability(
-        findings,
-        reviews,
-        requirements,
-        test_cases,
-    )
+    traceability_validation = artifact_bundle.traceability_validation
     yield stage_event("validation", STAGE_STATUS_COMPLETE)
     yield report_event(
         "validation",
@@ -618,66 +633,142 @@ def feed_label(value: object) -> str:
     return str(value or "").strip()
 
 
-def analyze_reviews(
-    reviews: list[dict[str, object]],
-    analysis_goal: str,
-) -> dict[str, object]:
+class AnalysisProvider(Protocol):
+    def analyze(
+        self,
+        reviews: list[dict[str, object]],
+        analysis_goal: str,
+    ) -> dict[str, object]:
+        pass
+
+
+class ReviewAnalysisEngine:
+    def model_analysis(
+        self,
+        provider: str,
+        model: str,
+        model_output: str,
+        reviews: list[dict[str, object]],
+        analysis_goal: str,
+    ) -> dict[str, object]:
+        analysis = parse_model_analysis(
+            model_output,
+            reviews,
+            analysis_goal,
+            f"{provider}:{model}",
+        )
+
+        return {
+            "summary": {
+                "provider": provider,
+                "model": model,
+                "modelDriven": True,
+            },
+            "scope": analysis["scope"],
+            "findings": analysis["findings"],
+        }
+
+
+class ModelAnalysisAdapter:
+    def __init__(
+        self,
+        provider: str,
+        model: str,
+        unavailable_message: str,
+        engine: ReviewAnalysisEngine | None = None,
+    ) -> None:
+        self.provider = provider
+        self.model = model
+        self.unavailable_message = unavailable_message
+        self.engine = engine or ReviewAnalysisEngine()
+
+    def analyze(
+        self,
+        reviews: list[dict[str, object]],
+        analysis_goal: str,
+    ) -> dict[str, object]:
+        prompt = build_review_analysis_prompt(reviews, analysis_goal)
+        try:
+            model_output = self.call_model(prompt)
+        except Exception as error:
+            raise HTTPException(
+                status_code=502,
+                detail=self.unavailable_message,
+            ) from error
+
+        return self.engine.model_analysis(
+            self.provider,
+            self.model,
+            model_output,
+            reviews,
+            analysis_goal,
+        )
+
+    def call_model(self, prompt: str) -> str:
+        raise NotImplementedError
+
+
+class OpenAIAnalysisAdapter(ModelAnalysisAdapter):
+    def __init__(
+        self,
+        model: str,
+        engine: ReviewAnalysisEngine | None = None,
+    ) -> None:
+        super().__init__(
+            provider="openai",
+            model=model,
+            unavailable_message="模型服务不可用，请检查 API key、网络或改用确定性兜底。",
+            engine=engine,
+        )
+
+    def call_model(self, prompt: str) -> str:
+        return call_openai_responses_api(prompt, self.model)
+
+
+class DeepSeekAnalysisAdapter(ModelAnalysisAdapter):
+    def __init__(
+        self,
+        model: str,
+        engine: ReviewAnalysisEngine | None = None,
+    ) -> None:
+        super().__init__(
+            provider="deepseek",
+            model=model,
+            unavailable_message="DeepSeek 模型服务不可用，请检查 API key、网络或改用确定性兜底。",
+            engine=engine,
+        )
+
+    def call_model(self, prompt: str) -> str:
+        return call_deepseek_chat_api(prompt, self.model)
+
+
+class StubAnalysisAdapter:
+    def analyze(
+        self,
+        reviews: list[dict[str, object]],
+        analysis_goal: str,
+    ) -> dict[str, object]:
+        return build_stub_analysis(reviews, analysis_goal)
+
+
+def configured_analysis_provider() -> AnalysisProvider:
     provider = os.getenv("MODEL_PROVIDER", "stub").lower()
     model = configured_model_name(provider)
 
     if provider == "openai" and os.getenv("OPENAI_API_KEY"):
-        prompt = build_review_analysis_prompt(reviews, analysis_goal)
-        try:
-            model_output = call_openai_responses_api(prompt, model)
-        except Exception as error:
-            raise HTTPException(
-                status_code=502,
-                detail="模型服务不可用，请检查 API key、网络或改用确定性兜底。",
-            ) from error
-        analysis = parse_model_analysis(
-            model_output,
-            reviews,
-            analysis_goal,
-            f"openai:{model}",
-        )
-
-        return {
-            "summary": {
-                "provider": "openai",
-                "model": model,
-                "modelDriven": True,
-            },
-            "scope": analysis["scope"],
-            "findings": analysis["findings"],
-        }
+        return OpenAIAnalysisAdapter(model)
 
     if provider == "deepseek" and os.getenv("DEEPSEEK_API_KEY"):
-        prompt = build_review_analysis_prompt(reviews, analysis_goal)
-        try:
-            model_output = call_deepseek_chat_api(prompt, model)
-        except Exception as error:
-            raise HTTPException(
-                status_code=502,
-                detail="DeepSeek 模型服务不可用，请检查 API key、网络或改用确定性兜底。",
-            ) from error
-        analysis = parse_model_analysis(
-            model_output,
-            reviews,
-            analysis_goal,
-            f"deepseek:{model}",
-        )
+        return DeepSeekAnalysisAdapter(model)
 
-        return {
-            "summary": {
-                "provider": "deepseek",
-                "model": model,
-                "modelDriven": True,
-            },
-            "scope": analysis["scope"],
-            "findings": analysis["findings"],
-        }
+    return StubAnalysisAdapter()
 
-    return build_stub_analysis(reviews, analysis_goal)
+
+def analyze_reviews(
+    reviews: list[dict[str, object]],
+    analysis_goal: str,
+) -> dict[str, object]:
+    return configured_analysis_provider().analyze(reviews, analysis_goal)
 
 
 def configured_model_name(provider: str) -> str:
@@ -751,6 +842,54 @@ def build_stub_analysis(
         "scope": build_default_analysis_scope(analysis_goal or "确定性兜底分析", reviews),
         "findings": findings,
     }
+
+
+class ScopeSelector:
+    """Selects review scope and explains the decision behind one interface."""
+
+    def select(
+        self,
+        reviews: list[dict[str, object]],
+        analysis_goal: str,
+    ) -> ScopeDecision:
+        selected_reviews = select_scope_reviews(reviews, analysis_goal)
+        analysis_scope = build_default_analysis_scope(
+            analysis_goal,
+            selected_reviews,
+            reviews,
+        )
+
+        return ScopeDecision(
+            selected_reviews=selected_reviews,
+            analysis_scope=analysis_scope,
+            report_details=self.report_details(analysis_scope),
+            report_revisions=self.report_revisions(analysis_scope),
+        )
+
+    def normalize(
+        self,
+        model_scope: object,
+        analysis_goal: str,
+        selected_reviews: list[dict[str, object]],
+        all_reviews: list[dict[str, object]],
+    ) -> dict[str, object]:
+        return normalize_analysis_scope(
+            model_scope,
+            analysis_goal,
+            selected_reviews,
+            all_reviews,
+        )
+
+    def report_details(self, analysis_scope: dict[str, object]) -> list[str]:
+        return [
+            f"范围评论：{', '.join(analysis_scope['scopeReviewIds']) or '无'}",
+            *[f"规则：{rule}" for rule in analysis_scope["filteringRules"]],
+        ]
+
+    def report_revisions(self, analysis_scope: dict[str, object]) -> list[str]:
+        return [
+            *[f"不确定性：{note}" for note in analysis_scope["uncertaintyNotes"]],
+        ]
 
 
 def build_default_analysis_scope(
@@ -1336,6 +1475,45 @@ def data_limitations(reviews: list[dict[str, object]]) -> list[str]:
         limitations.append("样本量较小，当前结论应视为方向性信号。")
 
     return limitations
+
+
+class TraceableArtifactBuilder:
+    """Builds the review-to-test artifact chain behind one interface."""
+
+    def __init__(
+        self,
+        test_case_generator: Callable[
+            [list[dict[str, object]]],
+            list[dict[str, object]],
+        ] | None = None,
+    ) -> None:
+        self.test_case_generator = test_case_generator or generate_test_cases
+
+    def build(
+        self,
+        findings: list[dict[str, object]],
+        analysis_scope: dict[str, object],
+        reviews: list[dict[str, object]],
+        analysis_goal: str,
+    ) -> TraceableArtifactBundle:
+        requirements = generate_requirements(findings, analysis_scope)
+        version_plan = generate_version_plan(requirements, analysis_scope)
+        prd = generate_prd(analysis_goal, analysis_scope, requirements, version_plan)
+        test_cases = self.test_case_generator(requirements)
+        traceability_validation = validate_traceability(
+            findings,
+            reviews,
+            requirements,
+            test_cases,
+        )
+
+        return TraceableArtifactBundle(
+            requirements=requirements,
+            version_plan=version_plan,
+            prd=prd,
+            test_cases=test_cases,
+            traceability_validation=traceability_validation,
+        )
 
 
 def generate_requirements(

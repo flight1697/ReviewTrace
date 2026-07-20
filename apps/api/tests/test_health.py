@@ -5,8 +5,11 @@ from fastapi.testclient import TestClient
 from reviewtrace_api import workflow
 from reviewtrace_api.main import app
 from reviewtrace_api.workflow import ReviewSourceBatch
+from reviewtrace_api.workflow import ScopeSelector
+from reviewtrace_api.workflow import TraceableArtifactBuilder
 from reviewtrace_api.workflow import WorkflowRunRequest
 from reviewtrace_api.workflow import WorkflowRunner
+from reviewtrace_api.workflow import analyze_reviews
 
 
 def test_health_check_identifies_reviewtrace_api():
@@ -85,6 +88,174 @@ def test_workflow_runner_interface_returns_complete_fixture_run():
     assert body["requirements"][0]["sourceReviewIds"] == body["findings"][0]["reviewIds"]
     assert body["testCases"][0]["requirementId"] == body["requirements"][0]["id"]
     assert body["traceabilityValidation"]["status"] == "passed"
+
+
+def test_traceable_artifact_builder_keeps_review_to_test_chain_together():
+    reviews = [
+        {
+            "id": "review-001",
+            "rating": 2,
+            "title": "订阅说明不清楚",
+            "body": "购买前没有看懂价格。",
+        }
+    ]
+    findings = [
+        {
+            "id": "finding-subscription-copy",
+            "title": "订阅说明需要在购买前更清楚地解释。",
+            "reviewIds": ["review-001"],
+            "sampleCount": 1,
+            "confidence": "高",
+            "method": "stub",
+            "evidence": [
+                {
+                    "reviewId": "review-001",
+                    "excerpt": "订阅说明不清楚：购买前没有看懂价格。",
+                }
+            ],
+            "conflictingEvidence": [],
+        }
+    ]
+    analysis_scope = {
+        "requestedGoal": "关注订阅说明",
+        "focusSummary": "关注订阅说明",
+        "focusAreas": ["付费和订阅路径"],
+        "dataSignals": [],
+        "constraints": [],
+        "uncertaintyNotes": [],
+        "scopeReviewIds": ["review-001"],
+        "selectionSummary": "保留全部评论。",
+        "filteringRules": [],
+        "excludedReviewIds": [],
+    }
+
+    bundle = TraceableArtifactBuilder().build(
+        findings=findings,
+        analysis_scope=analysis_scope,
+        reviews=reviews,
+        analysis_goal="关注订阅说明",
+    )
+
+    assert bundle.requirements[0]["findingIds"] == ["finding-subscription-copy"]
+    assert bundle.requirements[0]["sourceReviewIds"] == ["review-001"]
+    assert bundle.prd["requirements"][0]["id"] == bundle.requirements[0]["id"]
+    assert bundle.test_cases[0]["requirementId"] == bundle.requirements[0]["id"]
+    assert bundle.traceability_validation == {
+        "status": "passed",
+        "unsupportedFindingIds": [],
+        "unsupportedRequirementIds": [],
+        "unsupportedTestCaseIds": [],
+    }
+
+
+def test_scope_selector_returns_selected_reviews_and_scope_facts_together():
+    reviews = [
+        {
+            "id": "subscription-001",
+            "rating": 2,
+            "title": "订阅说明不清楚",
+            "body": "购买前没有看懂价格和取消方式。",
+        },
+        {
+            "id": "workout-001",
+            "rating": 5,
+            "title": "训练体验不错",
+            "body": "课程很适合居家使用。",
+        },
+    ]
+
+    decision = ScopeSelector().select(reviews, "关注订阅说明")
+
+    assert [review["id"] for review in decision.selected_reviews] == [
+        "subscription-001",
+        "workout-001",
+    ]
+    assert decision.analysis_scope["scopeReviewIds"] == [
+        "subscription-001",
+        "workout-001",
+    ]
+    assert decision.analysis_scope["excludedReviewIds"] == []
+    assert "保留全部评论" in decision.analysis_scope["selectionSummary"]
+    assert "付费和订阅路径" in decision.analysis_scope["focusAreas"]
+    assert decision.report_details[0] == "范围评论：subscription-001, workout-001"
+    assert decision.report_revisions[0].startswith("不确定性：")
+
+
+def test_analysis_provider_seam_selects_openai_adapter(monkeypatch):
+    monkeypatch.setenv("MODEL_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("MODEL_NAME", "gpt-test")
+
+    def fake_openai_response(prompt: str, model: str) -> str:
+        assert "review-001" in prompt
+        assert model == "gpt-test"
+        return """
+        {
+          "findings": [
+            {
+              "id": "finding-subscription",
+              "title": "订阅说明不清楚。",
+              "reviewIds": ["review-001"],
+              "sampleCount": 1,
+              "confidence": "高",
+              "conflictingEvidence": []
+            }
+          ]
+        }
+        """
+
+    monkeypatch.setattr(workflow, "call_openai_responses_api", fake_openai_response)
+
+    analysis = analyze_reviews(
+        [
+            {
+                "id": "review-001",
+                "rating": 2,
+                "title": "订阅说明不清楚",
+                "body": "购买前没有看懂价格。",
+                "appVersion": "",
+            }
+        ],
+        "关注订阅说明",
+    )
+
+    assert analysis["summary"] == {
+        "provider": "openai",
+        "model": "gpt-test",
+        "modelDriven": True,
+    }
+    assert analysis["findings"][0]["method"] == "openai:gpt-test"
+
+
+def test_analysis_provider_seam_preserves_deepseek_error(monkeypatch):
+    monkeypatch.setenv("MODEL_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+
+    def unavailable_model(prompt: str, model: str) -> str:
+        raise RuntimeError("network unavailable")
+
+    monkeypatch.setattr(workflow, "call_deepseek_chat_api", unavailable_model)
+
+    try:
+        analyze_reviews(
+            [
+                {
+                    "id": "review-001",
+                    "rating": 2,
+                    "title": "订阅说明不清楚",
+                    "body": "购买前没有看懂价格。",
+                    "appVersion": "",
+                }
+            ],
+            "关注订阅说明",
+        )
+    except Exception as error:
+        assert getattr(error, "status_code") == 502
+        assert getattr(error, "detail") == (
+            "DeepSeek 模型服务不可用，请检查 API key、网络或改用确定性兜底。"
+        )
+    else:
+        raise AssertionError("DeepSeek adapter failure should raise HTTPException")
 
 
 def test_workflow_runner_accepts_substitutable_review_source_adapter():
