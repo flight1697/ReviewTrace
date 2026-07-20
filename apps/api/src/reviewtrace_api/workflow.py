@@ -277,7 +277,7 @@ def complete_review_workflow_events(
         STAGE_STATUS_COMPLETE,
         f"{analysis['summary']['provider']} / {analysis['summary']['model']} 生成 {len(findings)} 个发现。",
         [
-            "模型驱动" if analysis["summary"]["modelDriven"] else "确定性兜底",
+            "模型驱动" if analysis["summary"]["modelDriven"] else "未配置模型，未生成发现",
             *[f"发现：{finding['title']}" for finding in findings[:3]],
         ],
     )
@@ -670,7 +670,7 @@ class OpenAIAnalysisAdapter(ModelAnalysisAdapter):
         super().__init__(
             provider="openai",
             model=model,
-            unavailable_message="模型服务不可用，请检查 API key、网络或改用确定性兜底。",
+            unavailable_message="模型服务不可用，请检查 API key 或网络。",
             engine=engine,
         )
 
@@ -687,7 +687,7 @@ class DeepSeekAnalysisAdapter(ModelAnalysisAdapter):
         super().__init__(
             provider="deepseek",
             model=model,
-            unavailable_message="DeepSeek 模型服务不可用，请检查 API key、网络或改用确定性兜底。",
+            unavailable_message="DeepSeek 模型服务不可用，请检查 API key 或网络。",
             engine=engine,
         )
 
@@ -695,17 +695,21 @@ class DeepSeekAnalysisAdapter(ModelAnalysisAdapter):
         return call_deepseek_chat_api(prompt, self.model)
 
 
-class StubAnalysisAdapter:
+class EmptyAnalysisAdapter:
+    def __init__(self, provider: str, model: str) -> None:
+        self.provider = provider
+        self.model = model
+
     def analyze(
         self,
         reviews: list[dict[str, object]],
         analysis_goal: str,
     ) -> dict[str, object]:
-        return build_stub_analysis(reviews, analysis_goal)
+        return build_empty_analysis(reviews, analysis_goal, self.provider, self.model)
 
 
 def configured_analysis_provider() -> AnalysisProvider:
-    provider = os.getenv("MODEL_PROVIDER", "stub").lower()
+    provider = os.getenv("MODEL_PROVIDER", "unconfigured").lower()
     model = configured_model_name(provider)
 
     if provider == "openai" and os.getenv("OPENAI_API_KEY"):
@@ -714,7 +718,7 @@ def configured_analysis_provider() -> AnalysisProvider:
     if provider == "deepseek" and os.getenv("DEEPSEEK_API_KEY"):
         return DeepSeekAnalysisAdapter(model)
 
-    return StubAnalysisAdapter()
+    return EmptyAnalysisAdapter(provider, model)
 
 
 def analyze_reviews(
@@ -731,15 +735,18 @@ def configured_model_name(provider: str) -> str:
     if provider == "deepseek":
         return "deepseek-v4-flash"
 
-    return "gpt-5.6-sol"
+    if provider == "openai":
+        return "gpt-5.6-sol"
+
+    return "no-model"
 
 
 def model_configuration() -> dict[str, object]:
     """Return safe, user-facing model configuration without exposing secrets."""
 
-    provider = os.getenv("MODEL_PROVIDER", "stub").lower()
+    provider = os.getenv("MODEL_PROVIDER", "unconfigured").lower()
     model = (
-        "deterministic-import-summary"
+        "no-model"
         if provider not in {"deepseek", "openai"}
         else configured_model_name(provider)
     )
@@ -753,9 +760,9 @@ def model_configuration() -> dict[str, object]:
     if model_driven_available:
         message = f"已配置 {provider} 模型，将使用模型驱动分析。"
     elif key_name:
-        message = f"未配置 {key_name}，当前将使用确定性兜底分析。"
+        message = f"未配置 {key_name}，当前将只返回空分析结果，不会伪造发现。"
     else:
-        message = "当前使用确定性兜底分析。配置支持的模型 provider 和 API key 后可启用模型分析。"
+        message = "当前未配置模型 provider，工作流会返回空分析结果。配置支持的模型 provider 和 API key 后可启用模型分析。"
 
     return {
         "provider": provider,
@@ -767,33 +774,20 @@ def model_configuration() -> dict[str, object]:
     }
 
 
-def build_stub_analysis(
+def build_empty_analysis(
     reviews: list[dict[str, object]],
     analysis_goal: str = "",
+    provider: str = "unconfigured",
+    model: str = "no-model",
 ) -> dict[str, object]:
-    review_ids = [str(review["id"]) for review in reviews]
-    findings: list[dict[str, object]] = []
-    if review_ids:
-        findings.append(
-            {
-                "id": "finding-imported-feedback",
-                "title": f"导入评论中出现了 {len(reviews)} 条可分析反馈。",
-                "reviewIds": review_ids,
-                "sampleCount": len(reviews),
-                "confidence": "待模型分析",
-                "method": "确定性导入摘要",
-                "conflictingEvidence": [],
-            }
-        )
-
     return {
         "summary": {
-            "provider": "stub",
-            "model": "deterministic-import-summary",
+            "provider": provider,
+            "model": model,
             "modelDriven": False,
         },
-        "scope": build_default_analysis_scope(analysis_goal or "确定性兜底分析", reviews),
-        "findings": findings,
+        "scope": build_default_analysis_scope(analysis_goal or "空分析", reviews),
+        "findings": [],
     }
 
 
@@ -1329,7 +1323,7 @@ def parse_model_findings(
             }
         )
 
-    return validated_findings or build_stub_analysis(reviews)["findings"]
+    return validated_findings
 
 
 def enrich_findings_with_evidence(
@@ -1740,7 +1734,7 @@ def build_stage_reports(
                 f"{analysis_summary['provider']} / {analysis_summary['model']} 生成 {len(findings)} 个发现。"
             ),
             "details": [
-                "模型驱动" if analysis_summary["modelDriven"] else "确定性兜底",
+                "模型驱动" if analysis_summary["modelDriven"] else "未配置模型，未生成发现",
                 *[f"发现：{finding['title']}" for finding in findings[:3]],
             ],
             "revisions": [

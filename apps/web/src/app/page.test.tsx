@@ -69,9 +69,9 @@ const workflowRunResponse = {
     ratingCounts: { "2": 1 },
   },
   analysisSummary: {
-    provider: "stub",
-    model: "deterministic-import-summary",
-    modelDriven: false,
+    provider: "openai",
+    model: "gpt-test",
+    modelDriven: true,
   },
   analysisScope: {
     requestedGoal: "关注订阅说明",
@@ -102,7 +102,7 @@ const workflowRunResponse = {
       reviewIds: ["json-001"],
       sampleCount: 1,
       confidence: "高",
-      method: "stub:deterministic-import-summary",
+      method: "openai:gpt-test",
       evidence: [
         {
           reviewId: "json-001",

@@ -38,7 +38,7 @@ def test_model_status_reports_missing_provider_key_without_exposing_secret(monke
         "keyConfigured": False,
         "modelDrivenAvailable": False,
         "fallbackAvailable": True,
-        "message": "未配置 DEEPSEEK_API_KEY，当前将使用确定性兜底分析。",
+        "message": "未配置 DEEPSEEK_API_KEY，当前将只返回空分析结果，不会伪造发现。",
     }
 
 
@@ -59,7 +59,7 @@ def test_model_status_reports_configured_provider_without_returning_key(monkeypa
     assert "secret-value" not in response.text
 
 
-def test_model_status_describes_default_deterministic_analysis(monkeypatch):
+def test_model_status_describes_unconfigured_empty_analysis(monkeypatch):
     monkeypatch.delenv("MODEL_PROVIDER", raising=False)
     monkeypatch.delenv("MODEL_NAME", raising=False)
 
@@ -67,12 +67,35 @@ def test_model_status_describes_default_deterministic_analysis(monkeypatch):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["provider"] == "stub"
-    assert body["model"] == "deterministic-import-summary"
+    assert body["provider"] == "unconfigured"
+    assert body["model"] == "no-model"
     assert body["modelDrivenAvailable"] is False
 
 
-def test_workflow_runner_interface_returns_complete_import_run():
+def test_workflow_runner_interface_returns_complete_import_run(monkeypatch):
+    monkeypatch.setenv("MODEL_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("MODEL_NAME", "gpt-test")
+
+    def fake_openai_response(prompt: str, model: str) -> str:
+        assert "import-001" in prompt
+        assert model == "gpt-test"
+        return """
+        {
+          "findings": [
+            {
+              "id": "finding-subscription-copy",
+              "title": "订阅说明需要在购买前更清楚地解释。",
+              "reviewIds": ["import-001"],
+              "sampleCount": 1,
+              "confidence": "高",
+              "conflictingEvidence": []
+            }
+          ]
+        }
+        """
+
+    monkeypatch.setattr(workflow, "call_openai_responses_api", fake_openai_response)
     runner = WorkflowRunner()
 
     body = runner.run(
@@ -119,7 +142,7 @@ def test_traceable_artifact_builder_keeps_review_to_test_chain_together():
             "reviewIds": ["review-001"],
             "sampleCount": 1,
             "confidence": "高",
-            "method": "stub",
+            "method": "unit-test",
             "evidence": [
                 {
                     "reviewId": "review-001",
@@ -265,7 +288,7 @@ def test_analysis_provider_seam_preserves_deepseek_error(monkeypatch):
     except Exception as error:
         assert getattr(error, "status_code") == 502
         assert getattr(error, "detail") == (
-            "DeepSeek 模型服务不可用，请检查 API key、网络或改用确定性兜底。"
+            "DeepSeek 模型服务不可用，请检查 API key 或网络。"
         )
     else:
         raise AssertionError("DeepSeek adapter failure should raise HTTPException")
@@ -312,7 +335,31 @@ def test_workflow_runner_accepts_substitutable_review_source_adapter():
     assert body["traceabilityValidation"]["status"] == "passed"
 
 
-def test_imported_workflow_returns_traceable_artifacts():
+def test_imported_workflow_returns_traceable_artifacts(monkeypatch):
+    monkeypatch.setenv("MODEL_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("MODEL_NAME", "gpt-test")
+
+    def fake_openai_response(prompt: str, model: str) -> str:
+        assert "import-001" in prompt
+        assert "import-002" in prompt
+        assert model == "gpt-test"
+        return """
+        {
+          "findings": [
+            {
+              "id": "finding-subscription-copy",
+              "title": "订阅说明需要在购买前更清楚地解释。",
+              "reviewIds": ["import-001", "import-002"],
+              "sampleCount": 2,
+              "confidence": "高",
+              "conflictingEvidence": []
+            }
+          ]
+        }
+        """
+
+    monkeypatch.setattr(workflow, "call_openai_responses_api", fake_openai_response)
     client = TestClient(app)
 
     response = client.post(
@@ -497,6 +544,9 @@ def test_workflow_stream_emits_stage_progress_before_final_run():
 
 def test_live_app_store_reviews_run_through_same_workflow(monkeypatch):
     client = TestClient(app)
+    monkeypatch.setenv("MODEL_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("MODEL_NAME", "gpt-test")
 
     def fake_app_store_reviews(app_id: str, storefront: str) -> list[dict[str, object]]:
         assert app_id == "839285684"
@@ -518,9 +568,30 @@ def test_live_app_store_reviews_run_through_same_workflow(monkeypatch):
                 "appVersion": "8.4.27",
                 "source": "app-store",
             },
-        ]
+            ]
 
     monkeypatch.setattr(workflow, "fetch_app_store_reviews", fake_app_store_reviews)
+
+    def fake_openai_response(prompt: str, model: str) -> str:
+        assert "live-001" in prompt
+        assert "live-002" in prompt
+        assert model == "gpt-test"
+        return """
+        {
+          "findings": [
+            {
+              "id": "finding-live-subscription",
+              "title": "实时评论指出订阅说明需要更清楚。",
+              "reviewIds": ["live-001", "live-002"],
+              "sampleCount": 2,
+              "confidence": "高",
+              "conflictingEvidence": []
+            }
+          ]
+        }
+        """
+
+    monkeypatch.setattr(workflow, "call_openai_responses_api", fake_openai_response)
 
     response = client.post(
         "/workflow/runs",
@@ -644,7 +715,31 @@ def test_workflow_rejects_unknown_source_mode():
     assert response.json()["detail"] == "sourceMode 必须是 live 或 import。"
 
 
-def test_imported_json_reviews_run_through_workflow():
+def test_imported_json_reviews_run_through_workflow(monkeypatch):
+    monkeypatch.setenv("MODEL_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("MODEL_NAME", "gpt-test")
+
+    def fake_openai_response(prompt: str, model: str) -> str:
+        assert "json-001" in prompt
+        assert "json-002" in prompt
+        assert model == "gpt-test"
+        return """
+        {
+          "findings": [
+            {
+              "id": "finding-low-rating-onboarding",
+              "title": "低评分评论指出新手训练解释不足。",
+              "reviewIds": ["json-001", "json-002"],
+              "sampleCount": 2,
+              "confidence": "高",
+              "conflictingEvidence": []
+            }
+          ]
+        }
+        """
+
+    monkeypatch.setattr(workflow, "call_openai_responses_api", fake_openai_response)
     client = TestClient(app)
 
     response = client.post(
@@ -711,9 +806,9 @@ def test_imported_json_reviews_run_through_workflow():
         "导入数据已完成结构化、清洗和基础统计，后续语义分析由后端模型能力生成。"
     ]
     assert body["analysisSummary"] == {
-        "provider": "stub",
-        "model": "deterministic-import-summary",
-        "modelDriven": False,
+        "provider": "openai",
+        "model": "gpt-test",
+        "modelDriven": True,
     }
     requirement = body["requirements"][0]
     test_case = body["testCases"][0]
@@ -1001,7 +1096,7 @@ def test_deepseek_provider_can_drive_semantic_findings(monkeypatch):
     assert body["findings"][0]["reviewIds"] == ["json-001"]
 
 
-def test_deepseek_provider_without_api_key_falls_back_to_stub(monkeypatch):
+def test_deepseek_provider_without_api_key_returns_empty_analysis(monkeypatch):
     client = TestClient(app)
 
     monkeypatch.setenv("MODEL_PROVIDER", "deepseek")
@@ -1036,11 +1131,15 @@ def test_deepseek_provider_without_api_key_falls_back_to_stub(monkeypatch):
     )
 
     assert response.status_code == 200
-    assert response.json()["analysisSummary"] == {
-        "provider": "stub",
-        "model": "deterministic-import-summary",
+    body = response.json()
+    assert body["analysisSummary"] == {
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash",
         "modelDriven": False,
     }
+    assert body["findings"] == []
+    assert body["requirements"] == []
+    assert body["testCases"] == []
 
 
 def test_openai_provider_failure_returns_recoverable_error(monkeypatch):
@@ -1077,7 +1176,7 @@ def test_openai_provider_failure_returns_recoverable_error(monkeypatch):
     )
 
     assert response.status_code == 502
-    assert response.json()["detail"] == "模型服务不可用，请检查 API key、网络或改用确定性兜底。"
+    assert response.json()["detail"] == "模型服务不可用，请检查 API key 或网络。"
 
 
 def test_deepseek_provider_failure_returns_recoverable_error(monkeypatch):
@@ -1115,12 +1214,36 @@ def test_deepseek_provider_failure_returns_recoverable_error(monkeypatch):
 
     assert response.status_code == 502
     assert response.json()["detail"] == (
-        "DeepSeek 模型服务不可用，请检查 API key、网络或改用确定性兜底。"
+        "DeepSeek 模型服务不可用，请检查 API key 或网络。"
     )
 
 
-def test_findings_include_conflicts_data_limits_and_traceability_validation():
+def test_findings_include_conflicts_data_limits_and_traceability_validation(monkeypatch):
     client = TestClient(app)
+    monkeypatch.setenv("MODEL_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("MODEL_NAME", "gpt-test")
+
+    def fake_openai_response(prompt: str, model: str) -> str:
+        assert "low-001" in prompt
+        assert "high-001" in prompt
+        assert model == "gpt-test"
+        return """
+        {
+          "findings": [
+            {
+              "id": "finding-subscription-copy",
+              "title": "订阅说明需要在购买前更清楚地解释。",
+              "reviewIds": ["low-001", "high-001"],
+              "sampleCount": 2,
+              "confidence": "高",
+              "conflictingEvidence": []
+            }
+          ]
+        }
+        """
+
+    monkeypatch.setattr(workflow, "call_openai_responses_api", fake_openai_response)
 
     response = client.post(
         "/workflow/runs",
@@ -1182,6 +1305,29 @@ def test_findings_include_conflicts_data_limits_and_traceability_validation():
 
 def test_traceability_validation_flags_unsupported_test_cases(monkeypatch):
     client = TestClient(app)
+    monkeypatch.setenv("MODEL_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("MODEL_NAME", "gpt-test")
+
+    def fake_openai_response(prompt: str, model: str) -> str:
+        assert "json-001" in prompt
+        assert model == "gpt-test"
+        return """
+        {
+          "findings": [
+            {
+              "id": "finding-subscription-copy",
+              "title": "订阅说明需要在购买前更清楚地解释。",
+              "reviewIds": ["json-001"],
+              "sampleCount": 1,
+              "confidence": "高",
+              "conflictingEvidence": []
+            }
+          ]
+        }
+        """
+
+    monkeypatch.setattr(workflow, "call_openai_responses_api", fake_openai_response)
 
     def unsupported_test_case(requirements: list[dict[str, object]]) -> list[dict[str, object]]:
         return [

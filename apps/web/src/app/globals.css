@@ -780,60 +780,6 @@ textarea:focus {
   line-height: 1.6;
 }
 
-.recovery-actions,
-.sample-downloads {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.recovery-actions {
-  margin-top: 10px;
-}
-
-.recovery-actions button,
-.recovery-actions span,
-.sample-downloads a {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: 999px;
-  padding: 7px 10px;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.recovery-actions button {
-  color: #ffffff;
-  background: #b45309;
-  cursor: pointer;
-}
-
-.recovery-actions button:hover {
-  background: #92400e;
-}
-
-.recovery-actions span {
-  color: #92400e;
-  background: #fef3c7;
-}
-
-.sample-downloads {
-  max-width: 640px;
-  align-items: center;
-}
-
-.sample-downloads a {
-  color: #0f766e;
-  background: #e6fffb;
-  text-decoration: none;
-}
-
-.sample-downloads span {
-  color: #64748b;
-  font-size: 12px;
-}
-
 .dashboard {
   display: grid;
   gap: 20px;
