@@ -72,18 +72,31 @@ def test_model_status_describes_default_deterministic_analysis(monkeypatch):
     assert body["modelDrivenAvailable"] is False
 
 
-def test_workflow_runner_interface_returns_complete_fixture_run():
+def test_workflow_runner_interface_returns_complete_import_run():
     runner = WorkflowRunner()
 
     body = runner.run(
         WorkflowRunRequest(
             appStoreUrl="https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684",
             analysisGoal="关注订阅转化相关投诉",
-            sourceMode="fixture",
+            sourceMode="import",
+            datasetFormat="json",
+            datasetText="""
+            {
+              "reviews": [
+                {
+                  "id": "import-001",
+                  "rating": 2,
+                  "title": "订阅说明不清楚",
+                  "body": "购买前没有看懂价格和取消方式。"
+                }
+              ]
+            }
+            """,
         )
     )
 
-    assert body["runId"] == "fixture-run-001"
+    assert body["runId"] == "import-run-001"
     assert body["findings"][0]["evidence"]
     assert body["requirements"][0]["sourceReviewIds"] == body["findings"][0]["reviewIds"]
     assert body["testCases"][0]["requirementId"] == body["requirements"][0]["id"]
@@ -299,7 +312,7 @@ def test_workflow_runner_accepts_substitutable_review_source_adapter():
     assert body["traceabilityValidation"]["status"] == "passed"
 
 
-def test_fixture_workflow_returns_traceable_artifacts():
+def test_imported_workflow_returns_traceable_artifacts():
     client = TestClient(app)
 
     response = client.post(
@@ -307,14 +320,33 @@ def test_fixture_workflow_returns_traceable_artifacts():
         json={
             "appStoreUrl": "https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684",
             "analysisGoal": "关注订阅转化相关投诉",
-            "sourceMode": "fixture",
+            "sourceMode": "import",
+            "datasetFormat": "json",
+            "datasetText": """
+            {
+              "reviews": [
+                {
+                  "id": "import-001",
+                  "rating": 2,
+                  "title": "订阅说明不清楚",
+                  "body": "购买前没有看懂价格和取消方式。"
+                },
+                {
+                  "id": "import-002",
+                  "rating": 4,
+                  "title": "训练内容不错",
+                  "body": "课程很适合居家使用。"
+                }
+              ]
+            }
+            """,
         },
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["source"]["mode"] == "fixture"
-    assert body["source"]["label"] == "缓存示例数据集"
+    assert body["source"]["mode"] == "import"
+    assert body["source"]["label"] == "导入的 JSON 数据集"
     assert body["scope"]["analysisGoal"] == "关注订阅转化相关投诉"
     assert body["stages"] == [
         {"name": "reviews", "status": "complete"},
@@ -357,7 +389,7 @@ def test_fixture_workflow_returns_traceable_artifacts():
     assert body["stageReports"][4]["details"][0].startswith("PRD 目标：")
     assert body["stageReports"][6]["summary"] == "追溯校验通过"
     assert body["validationMessages"] == [
-        "所有发现、需求和测试用例都已关联示例评论证据。"
+        "导入数据已完成结构化、清洗和基础统计，后续语义分析由后端模型能力生成。"
     ]
 
 
@@ -369,7 +401,20 @@ def test_workflow_run_can_be_fetched_after_creation():
         json={
             "appStoreUrl": "https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684",
             "analysisGoal": "关注订阅转化相关投诉",
-            "sourceMode": "fixture",
+            "sourceMode": "import",
+            "datasetFormat": "json",
+            "datasetText": """
+            {
+              "reviews": [
+                {
+                  "id": "import-001",
+                  "rating": 2,
+                  "title": "订阅说明不清楚",
+                  "body": "购买前没有看懂价格和取消方式。"
+                }
+              ]
+            }
+            """,
         },
     )
 
@@ -406,7 +451,20 @@ def test_workflow_stream_emits_stage_progress_before_final_run():
         json={
             "appStoreUrl": "https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684",
             "analysisGoal": "关注订阅转化相关投诉",
-            "sourceMode": "fixture",
+            "sourceMode": "import",
+            "datasetFormat": "json",
+            "datasetText": """
+            {
+              "reviews": [
+                {
+                  "id": "import-001",
+                  "rating": 2,
+                  "title": "订阅说明不清楚",
+                  "body": "购买前没有看懂价格和取消方式。"
+                }
+              ]
+            }
+            """,
         },
     ) as response:
         assert response.status_code == 200
@@ -427,11 +485,11 @@ def test_workflow_stream_emits_stage_progress_before_final_run():
     )
     assert report_events[0]["report"]["name"] == "reviews"
     assert final_events[0] == events[-1]
-    assert final_events[0]["run"]["runId"] == "fixture-run-001"
+    assert final_events[0]["run"]["runId"] == "import-run-001"
     assert final_events[0]["run"]["analysisScope"]["selectionSummary"]
     assert final_events[0]["run"]["analysisScope"]["filteringRules"]
 
-    detail_response = client.get("/workflow/runs/fixture-run-001")
+    detail_response = client.get("/workflow/runs/import-run-001")
 
     assert detail_response.status_code == 200
     assert detail_response.json() == final_events[0]["run"]
@@ -583,7 +641,7 @@ def test_workflow_rejects_unknown_source_mode():
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "sourceMode 必须是 live、fixture 或 import。"
+    assert response.json()["detail"] == "sourceMode 必须是 live 或 import。"
 
 
 def test_imported_json_reviews_run_through_workflow():
@@ -650,7 +708,7 @@ def test_imported_json_reviews_run_through_workflow():
         "excerpt": "训练计划太突然：低评分用户觉得新手训练没有解释清楚。",
     }
     assert body["validationMessages"] == [
-        "导入数据已完成结构化、清洗和基础统计，后续语义分析会在模型阶段替换当前占位结果。"
+        "导入数据已完成结构化、清洗和基础统计，后续语义分析由后端模型能力生成。"
     ]
     assert body["analysisSummary"] == {
         "provider": "stub",

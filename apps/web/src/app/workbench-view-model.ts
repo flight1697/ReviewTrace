@@ -1,45 +1,150 @@
-import {
-  demoFindingCards,
-  demoOverview,
-  demoRequirements,
-  demoReviewRows,
-  demoSummaryMetrics,
-  demoTestCases,
-  demoThemeCards,
-  demoValidationIssues,
-  type DemoFindingCard,
-  type DemoRequirementCard,
-  type DemoReviewRow,
-  type DemoTestCase,
-  type DemoThemeCard,
-  type DemoValidationIssue,
-} from "./reviewtrace-demo";
 import type { Finding, Review, WorkflowRun } from "./workflow";
+
+export type DemoReviewRow = {
+  id: string;
+  rating: number;
+  date: string;
+  version: string;
+  locale: string;
+  excerpt: string;
+  theme: string;
+  sentiment: "正向" | "混合" | "负向";
+  duplicateOf?: string;
+  evidenceUsed: string;
+  source: "实时" | "导入" | "未知";
+};
+
+export type DemoThemeCard = {
+  id: string;
+  name: string;
+  summary: string;
+  reviews: number;
+  share: string;
+  avgRating: string;
+  confidence: "高" | "中" | "低";
+  trend: string;
+  conflicts: number;
+  versions: string[];
+  languages: string[];
+  spark: number[];
+};
+
+export type DemoFindingCard = {
+  id: string;
+  title: string;
+  severity: string;
+  confidence: "高" | "中" | "低";
+  sampleCount: number;
+  supportingReviews: string[];
+  stats: string;
+  synthesis: string;
+  contradictingEvidence: string[];
+  limitation: string;
+  assumption?: boolean;
+};
+
+export type DemoRequirementCard = {
+  id: string;
+  statement: string;
+  priority: "P0" | "P1" | "P2";
+  targetRelease: string;
+  sourceFindings: string[];
+  sourceReviews: string[];
+  acceptanceCriteria: string[];
+  confidence: string;
+  assumption?: boolean;
+  status: "草案" | "已验证" | "证据不足";
+};
+
+export type DemoTestCase = {
+  id: string;
+  title: string;
+  type: "功能" | "体验" | "回归" | "失败恢复";
+  priority: string;
+  requirementId: string;
+  sourceReviews: string[];
+  preconditions: string[];
+  steps: string[];
+  expected: string;
+  edgeCases: string[];
+  why: string;
+};
+
+export type DemoValidationIssue = {
+  id: string;
+  title: string;
+  status: "有效" | "警告" | "断链";
+  path: string;
+  reviewCount: number;
+  note: string;
+  action: string;
+};
+
+export type WorkbenchSummaryMetric = {
+  label: string;
+  value: string;
+  hint: string;
+};
+
+export type WorkbenchOverview = {
+  summary: {
+    strongest: string;
+    uncertain: string;
+    buildV1: string;
+    defer: string;
+  };
+  versionPlan: {
+    label: string;
+    note: string;
+    count: number;
+  }[];
+  deliverables: string[];
+};
 
 export type WorkbenchViewModel = {
   cleanReviewRows: DemoReviewRow[];
   findingCards: DemoFindingCard[];
-  overview: typeof demoOverview;
+  overview: WorkbenchOverview;
   rawReviewRows: DemoReviewRow[];
   requirementCards: DemoRequirementCard[];
-  summaryMetrics: typeof demoSummaryMetrics;
+  summaryMetrics: WorkbenchSummaryMetric[];
   testCaseCards: DemoTestCase[];
   themeCards: DemoThemeCard[];
   validationIssues: DemoValidationIssue[];
 };
 
+const EMPTY_OVERVIEW: WorkbenchOverview = {
+  summary: {
+    strongest: "暂无运行结果，开始分析后会显示真实证据链。",
+    uncertain: "当前还没有可验证的运行数据。",
+    buildV1: "等待后端工作流生成版本建议。",
+    defer: "暂无需要延后的交付物。",
+  },
+  versionPlan: [],
+  deliverables: [],
+};
+
+const EMPTY_SUMMARY_METRICS: WorkbenchSummaryMetric[] = [
+  { label: "已收集评论", value: "0", hint: "等待后端返回运行结果" },
+  { label: "清洗后评论", value: "0", hint: "等待运行" },
+  { label: "已去重", value: "0", hint: "等待运行" },
+  { label: "识别语言", value: "0", hint: "等待运行" },
+  { label: "模型发现", value: "0", hint: "等待运行" },
+  { label: "验证问题", value: "0", hint: "等待运行" },
+];
+
 export function buildWorkbenchModel(run: WorkflowRun | null): WorkbenchViewModel {
   if (!run) {
     return {
-      cleanReviewRows: demoReviewRows.filter((row) => !row.duplicateOf),
-      findingCards: demoFindingCards,
-      overview: demoOverview,
-      rawReviewRows: demoReviewRows,
-      requirementCards: demoRequirements,
-      summaryMetrics: demoSummaryMetrics,
-      testCaseCards: demoTestCases,
-      themeCards: demoThemeCards,
-      validationIssues: demoValidationIssues,
+      cleanReviewRows: [],
+      findingCards: [],
+      overview: EMPTY_OVERVIEW,
+      rawReviewRows: [],
+      requirementCards: [],
+      summaryMetrics: EMPTY_SUMMARY_METRICS,
+      testCaseCards: [],
+      themeCards: [],
+      validationIssues: [],
     };
   }
 
@@ -257,7 +362,7 @@ function buildRunValidationIssues(run: WorkflowRun): DemoValidationIssue[] {
   return issues;
 }
 
-function buildRunOverview(run: WorkflowRun): typeof demoOverview {
+function buildRunOverview(run: WorkflowRun): WorkbenchOverview {
   const supportedRequirements = run.requirements.filter((requirement) => !requirement.assumption);
 
   return {
@@ -292,7 +397,7 @@ function buildRunOverview(run: WorkflowRun): typeof demoOverview {
   };
 }
 
-function buildRunSummaryMetrics(run: WorkflowRun): typeof demoSummaryMetrics {
+function buildRunSummaryMetrics(run: WorkflowRun): WorkbenchSummaryMetric[] {
   const languages = uniqueNonEmpty(run.reviews.map((review) => review.locale || ""));
   return [
     {
@@ -337,9 +442,8 @@ function buildRunSummaryMetrics(run: WorkflowRun): typeof demoSummaryMetrics {
 
 function sourceModeLabel(mode: string): DemoReviewRow["source"] {
   if (mode === "live") return "实时";
-  if (mode === "fixture") return "缓存";
   if (mode === "import") return "导入";
-  return "示例";
+  return "未知";
 }
 
 function uniqueNonEmpty(values: string[]) {

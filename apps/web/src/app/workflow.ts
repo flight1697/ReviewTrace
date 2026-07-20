@@ -194,7 +194,13 @@ export type WorkflowRunSummary = {
   testCaseCount: number;
 };
 
-export type WorkflowRequestBody = Record<string, string>;
+export type WorkflowRequestBody = {
+  analysisGoal: string;
+  appStoreUrl: string;
+  datasetFormat?: "json" | "csv";
+  datasetText?: string;
+  sourceMode?: "live" | "import";
+};
 export type WorkflowStatus = "idle" | "running" | "failed";
 
 export type WorkflowStreamEvent =

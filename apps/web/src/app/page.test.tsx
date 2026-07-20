@@ -227,10 +227,9 @@ describe("ReviewTrace 工作台", () => {
     expect(screen.getByRole("button", { name: /导入 JSON \/ CSV/ })).toBeInTheDocument();
     expect(screen.getByLabelText("App Store 链接")).toBeInTheDocument();
     expect(screen.getByLabelText("分析目标")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /下载字段示例/ })).toHaveAttribute(
-      "download",
-      "reviewtrace-schema-example.json",
-    );
+    expect(screen.getByText("字段映射")).toBeInTheDocument();
+    expect(screen.getByText("真实契约")).toBeInTheDocument();
+    expect(screen.getByText(/JSON 需要 reviews 数组/)).toBeInTheDocument();
 
     await waitFor(() => {
       expect(
@@ -258,7 +257,7 @@ describe("ReviewTrace 工作台", () => {
     expect(screen.queryByText("46%")).not.toBeInTheDocument();
   });
 
-  it("评论页支持真实搜索、评分和重复项筛选", () => {
+  it("评论页在未运行时显示真实空状态和筛选控件", () => {
     render(<Home />);
 
     fireEvent.click(
@@ -267,21 +266,14 @@ describe("ReviewTrace 工作台", () => {
       }),
     );
 
-    fireEvent.change(screen.getByLabelText("搜索评论"), {
-      target: { value: "REV-01007" },
-    });
-    expect(screen.getByRole("button", { name: "REV-01007" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "REV-00421" })).not.toBeInTheDocument();
+    expect(screen.getByText("没有符合筛选条件的评论。")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("搜索评论"), {
-      target: { value: "" },
+      target: { value: "REV-01007" },
     });
     fireEvent.change(screen.getByLabelText("重复项筛选"), {
       target: { value: "only" },
     });
-    expect(screen.getByRole("button", { name: "REV-00818" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "REV-00421" })).not.toBeInTheDocument();
-
     fireEvent.change(screen.getByLabelText("评分筛选"), {
       target: { value: "high" },
     });
@@ -314,7 +306,7 @@ describe("ReviewTrace 工作台", () => {
     expect(versionsButton).toHaveClass("is-active");
   });
 
-  it("切换到 Reviews 与 Findings 页面后仍然能看见核心数据", () => {
+  it("切换到 Reviews 与 Findings 页面会显示空状态", () => {
     render(<Home />);
 
     fireEvent.click(
@@ -324,8 +316,7 @@ describe("ReviewTrace 工作台", () => {
     );
 
     expect(screen.getByRole("heading", { name: "原始评论与清洗评论" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "REV-00421" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "REV-00818" })).toBeInTheDocument();
+    expect(screen.getByText("没有符合筛选条件的评论。")).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole("button", {
@@ -338,11 +329,11 @@ describe("ReviewTrace 工作台", () => {
         name: "动态主题与证据支撑的发现",
       }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /THM-006/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /FND-003/ })).toBeInTheDocument();
+    expect(screen.getByText("当前运行没有生成主题卡。")).toBeInTheDocument();
+    expect(screen.getByText("当前运行没有生成发现。")).toBeInTheDocument();
   });
 
-  it("切换到 PRD、测试和追溯页面能看到交付物", () => {
+  it("切换到 PRD、测试和追溯页面会显示空状态和真实验证信息", () => {
     render(<Home />);
 
     fireEvent.click(
@@ -351,13 +342,13 @@ describe("ReviewTrace 工作台", () => {
       }),
     );
     expect(screen.getByRole("heading", { name: "PRD v1 草案" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /REQ-004/ })).toBeInTheDocument();
+    expect(screen.getByText("当前运行没有生成需求。")).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole("button", { name: "测试套件可追溯测试套件" }),
     );
     expect(screen.getByRole("heading", { name: "可追溯测试套件" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /TC-012/ })).toBeInTheDocument();
+    expect(screen.getByText("当前运行没有生成测试用例。")).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole("button", { name: "追溯矩阵追溯矩阵与关系图" }),
@@ -365,7 +356,7 @@ describe("ReviewTrace 工作台", () => {
     expect(
       screen.getByRole("heading", { name: "评论 → 发现 → 需求 → 测试用例" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /VAL-001/ })).toBeInTheDocument();
+    expect(screen.getByText("完全可追溯")).toBeInTheDocument();
   });
 
   it("启动真实运行后各交付物页面使用后端运行数据", async () => {

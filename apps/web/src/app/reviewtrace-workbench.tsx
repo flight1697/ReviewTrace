@@ -50,35 +50,23 @@ import {
   defaultAnalysisGoal,
   defaultAppStoreLink,
   readFileText,
+  type WorkflowRun,
   useModelStatus,
   useWorkflowRun,
 } from "./workflow";
 import {
-  demoFindingCards,
-  demoGoalChips,
-  demoRequirements,
-  demoReviewRows,
-  demoScopeLimits,
-  demoStages,
-  demoTestCases,
-  demoValidationIssues,
-  schemaExampleCsv,
-  schemaExampleJson,
-  type DemoInspectorKind,
-  type DemoReviewRow,
-  type DemoView,
-} from "./reviewtrace-demo";
-import {
   buildWorkbenchModel,
   workflowStageIdForNav,
+  type DemoReviewRow,
 } from "./workbench-view-model";
 
-type SourceMode = "live" | "fixture" | "import";
+type SourceMode = "live" | "import";
 type ReviewTab = "raw" | "clean";
 type ReviewDuplicateFilter = "all" | "only" | "hide";
 type ReviewRatingFilter = "all" | "low" | "mid" | "high";
 type FindingsTab = "themes" | "findings";
 type ValidateTab = "matrix" | "graph";
+type DemoView = "new" | "run" | "reviews" | "findings" | "prd" | "tests" | "validate" | "overview";
 type InspectorSelection =
   | { kind: "run_health" }
   | { kind: "app_preview" }
@@ -134,14 +122,24 @@ const prdOutline = [
   { id: "versions", label: "版本计划" },
 ];
 
+const workflowStageOrder = [
+  "reviews",
+  "cleaning",
+  "scope",
+  "analysis",
+  "prd",
+  "tests",
+  "validation",
+] as const;
+
 const defaultInspectorMap: Record<DemoView, InspectorSelection> = {
   new: { kind: "app_preview" },
   run: { kind: "run_health" },
-  reviews: { kind: "review", id: demoReviewRows[0].id },
-  findings: { kind: "finding", id: demoFindingCards[0].id },
-  prd: { kind: "requirement", id: demoRequirements[0].id },
-  tests: { kind: "test_case", id: demoTestCases[0].id },
-  validate: { kind: "validation_issue", id: demoValidationIssues[0].id },
+  reviews: { kind: "overview" },
+  findings: { kind: "overview" },
+  prd: { kind: "overview" },
+  tests: { kind: "overview" },
+  validate: { kind: "overview" },
   overview: { kind: "overview" },
 };
 
@@ -159,7 +157,7 @@ function stageIcon(status: string) {
   return <CircleDashed size={14} />;
 }
 
-function inspectorKindLabel(kind: DemoInspectorKind | "run_health") {
+function inspectorKindLabel(kind: InspectorSelection["kind"]) {
   if (kind === "run_health") return "运行健康";
   if (kind === "app_preview") return "应用预览";
   if (kind === "review") return "评论";
@@ -192,7 +190,7 @@ export default function ReviewTraceWorkbench() {
   const [validateTab, setValidateTab] = useState<ValidateTab>("matrix");
   const [requestedStart, setRequestedStart] = useState(false);
   const [validationAttempted, setValidationAttempted] = useState(false);
-  const [inspectorHint, setInspectorHint] = useState("示例");
+  const [inspectorHint, setInspectorHint] = useState("未运行");
   const [reviewSearch, setReviewSearch] = useState("");
   const [reviewRatingFilter, setReviewRatingFilter] =
     useState<ReviewRatingFilter>("all");
@@ -221,10 +219,10 @@ export default function ReviewTraceWorkbench() {
       }));
     }
 
-    return demoStages.map((stage) => ({
-      id: workflowStageIdForNav(stage.id),
-      label: stage.label,
-      status: stage.status,
+    return workflowStageOrder.map((stage) => ({
+      id: stage,
+      label: workflowStageLabel(stage),
+      status: "pending",
     }));
   }, [progressStages, run]);
 
@@ -232,20 +230,18 @@ export default function ReviewTraceWorkbench() {
     status === "running"
       ? "运行中"
       : run
-        ? run.traceabilityValidation.status === "passed"
+      ? run.traceabilityValidation.status === "passed"
           ? "已验证"
           : "需要关注"
         : status === "failed"
           ? "需要关注"
-          : "演示就绪";
+          : "未运行";
 
   const currentSource =
     run?.source.label ??
     (sourceMode === "import"
       ? importFileName || "等待导入"
-      : sourceMode === "fixture"
-        ? "缓存示例数据集"
-        : "App Store API");
+      : "等待采集");
 
   const currentRunId = run?.runId ?? "尚未运行";
   const currentProvider =
@@ -280,9 +276,7 @@ export default function ReviewTraceWorkbench() {
   const sourceLabel =
     sourceMode === "import"
       ? importFileName || "导入数据集"
-      : sourceMode === "fixture"
-        ? "缓存示例数据集"
-        : "U.S. App Store";
+      : "U.S. App Store";
 
   useEffect(() => {
     setValidationAttempted(false);
@@ -307,13 +301,7 @@ export default function ReviewTraceWorkbench() {
       if (typeof parsed.analysisGoal === "string") {
         setAnalysisGoal(parsed.analysisGoal);
       }
-      if (
-        parsed.sourceMode === "live" ||
-        parsed.sourceMode === "fixture" ||
-        parsed.sourceMode === "import"
-      ) {
-        setSourceMode(parsed.sourceMode);
-      }
+      setSourceMode(parsed.sourceMode === "import" ? "import" : "live");
       if (typeof parsed.savedAt === "string") {
         setDraftSavedAt(parsed.savedAt);
       }
@@ -334,7 +322,7 @@ export default function ReviewTraceWorkbench() {
   function goToView(view: DemoView) {
     setActiveView(view);
     setActiveInspector(defaultInspectorSelection(view));
-    setInspectorHint(run ? "实时" : "示例");
+    setInspectorHint(run ? "实时" : "未运行");
     setMobileNavOpen(false);
     setMobileInspectorOpen(false);
     if (view === "run") {
@@ -345,7 +333,7 @@ export default function ReviewTraceWorkbench() {
   function goToStage(stage: (typeof stageNav)[number]) {
     setActiveStageId(stage.id);
     setActiveView(stage.view);
-    setInspectorHint(run ? "实时" : "示例");
+    setInspectorHint(run ? "实时" : "未运行");
     setMobileNavOpen(false);
     if (stage.view === "run") {
       openInspector(defaultInspectorMap.run, { revealOnMobile: false });
@@ -607,13 +595,6 @@ export default function ReviewTraceWorkbench() {
             App Store 链接
           </button>
           <button
-            className={`rt-segmented__button ${sourceMode === "fixture" ? "is-active" : ""}`}
-            type="button"
-            onClick={() => setSourceMode("fixture")}
-          >
-            缓存示例
-          </button>
-          <button
             className={`rt-segmented__button ${sourceMode === "import" ? "is-active" : ""}`}
             type="button"
             onClick={() => setSourceMode("import")}
@@ -629,7 +610,7 @@ export default function ReviewTraceWorkbench() {
                 <p className="rt-kicker">A. App Store 链接</p>
                 <h2>粘贴可用的 App Store 商店链接</h2>
               </div>
-              <span className="rt-pill">{sourceMode === "fixture" ? "使用后端缓存" : "实时采集入口"}</span>
+              <span className="rt-pill">实时采集入口</span>
             </div>
             <div className="rt-field rt-field--link">
               <span className="rt-field__icon">
@@ -654,23 +635,17 @@ export default function ReviewTraceWorkbench() {
                 <AppIcon />
               </div>
               <div className="rt-preview__body">
-                <strong>{run ? "最近一次运行" : "待分析应用"}</strong>
-                <span>
-                  {sourceMode === "fixture"
-                    ? "缓存数据集会走完整后端工作流。"
-                    : "运行完成后会以真实结果替换当前预览。"}
-                </span>
+                <strong>{run ? "最近一次运行" : "等待真实运行"}</strong>
+                <span>运行完成后会以后端返回的评论和分析结果替换当前预览。</span>
                 <div className="rt-preview__meta">
                   <span>{extractAppStoreId(appStoreLink) || "未识别 App ID"}</span>
                   <span>{run ? `${run.reviews.length} 条清洗评论` : "尚未运行"}</span>
-                  <span>{sourceMode === "fixture" ? "缓存" : sourceMode === "import" ? "导入" : "实时"}</span>
+                  <span>{sourceMode === "import" ? "导入" : "实时"}</span>
                   <span>{appStoreError || "链接格式可用"}</span>
                 </div>
               </div>
             </button>
-            <p className="rt-note">
-              App Store 元数据不会在前端伪造；运行完成后以评论源和工作流输出为准。
-            </p>
+            <p className="rt-note">App Store 元数据由后端运行结果决定，前端不再伪造。</p>
           </section>
 
           <section className={`rt-card rt-card--surface ${sourceMode === "import" ? "" : "rt-card--dimmed"}`}>
@@ -679,9 +654,7 @@ export default function ReviewTraceWorkbench() {
                 <p className="rt-kicker">B. 导入 JSON / CSV</p>
                 <h2>拖入评论数据集或上传文件</h2>
               </div>
-              <a className="rt-link" href={`data:text/plain;charset=utf-8,${encodeURIComponent(schemaExampleJson)}`} download="reviewtrace-schema-example.json">
-                下载字段示例
-              </a>
+              <span className="rt-pill">结构契约已内置</span>
             </div>
 
             <div
@@ -722,9 +695,9 @@ export default function ReviewTraceWorkbench() {
             <div className="rt-code-sample">
               <div className="rt-code-sample__head">
                 <span>字段映射</span>
-                <span>{importText ? "导入预览" : "示例格式"}</span>
+                <span>真实契约</span>
               </div>
-              <pre>{importText ? importPreview : schemaExampleCsv}</pre>
+              <pre>{importText ? importPreview : "JSON 需要 reviews 数组；CSV 需要 id、rating、title/body、version、date、locale 等字段。"} </pre>
             </div>
           </section>
         </div>
@@ -744,18 +717,7 @@ export default function ReviewTraceWorkbench() {
             onChange={(event) => setAnalysisGoal(event.target.value)}
             placeholder="聚焦订阅转化、训练可用性、7.2 版本与低评分评论。请突出冲突反馈，避免依赖少于 3 条独立评论的结论。"
           />
-          <div className="rt-chip-row">
-            {demoGoalChips.map((chip) => (
-              <button
-                key={chip}
-                className="rt-chip"
-                type="button"
-                onClick={() => setAnalysisGoal((value) => `${value ? `${value}\n` : ""}${chip}`)}
-              >
-                {chip}
-              </button>
-            ))}
-          </div>
+          <p className="rt-note">目标会直接送入后端工作流，不再提供占位按钮。</p>
         </section>
 
         <section className="rt-card rt-card--surface rt-card--limits">
@@ -776,14 +738,15 @@ export default function ReviewTraceWorkbench() {
           {scopeExpanded ? (
             <>
               <div className="rt-limit-grid">
-                {(run?.analysisScope?.filteringRules?.length
-                  ? run.analysisScope.filteringRules
-                  : demoScopeLimits
-                ).map((item) => (
-                  <div key={item} className="rt-limit-item">
-                    <span>{item}</span>
-                  </div>
-                ))}
+                {run?.analysisScope?.filteringRules?.length ? (
+                  run.analysisScope.filteringRules.map((item) => (
+                    <div key={item} className="rt-limit-item">
+                      <span>{item}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="rt-note">运行后会自动生成评分、版本、语言和证据阈值。</p>
+                )}
               </div>
               <div className="rt-inline-metrics">
                 <div><strong>模型</strong><span>{currentProvider}</span></div>
@@ -831,8 +794,8 @@ export default function ReviewTraceWorkbench() {
       : status === "running"
         ? "正在启动采集、清洗与分析流程。阶段状态会在下方逐步刷新。"
         : error
-          ? "启动或运行失败。请回到新分析检查输入，或切换到缓存示例继续验证流程。"
-          : "演示工作台 · 当前未启动真实运行。点击开始分析后将显示实时阶段状态与证据。";
+          ? "启动或运行失败。请回到新分析检查输入并重新启动。"
+          : "当前未启动真实运行。点击开始分析后将显示实时阶段状态与证据。";
 
     return (
       <div className="rt-page">
@@ -889,22 +852,19 @@ export default function ReviewTraceWorkbench() {
           <div className="rt-section-head">
             <div>
               <p className="rt-kicker">追溯时间线</p>
-              <h2>可展开行展示方法类型、输入、输出、token 与警告</h2>
+              <h2>按阶段展示真实报告、输入摘要和输出摘要</h2>
             </div>
-            <span className="rt-pill">确定性 / 模型生成</span>
+            <span className="rt-pill">后端阶段报告</span>
           </div>
           <div className="rt-trace-list">
             {currentTimelineStages.map((stage, index) => {
-              const demoStage = demoStages.find(
-                (item) => workflowStageIdForNav(item.id) === stage.id,
-              );
               const report = effectiveStageReports.find((item) => item.name === stage.id);
               const rawStatus = stage.status ?? "pending";
-              const summary = report?.summary ?? demoStage?.summary ?? "等待中";
-              const details = report?.details ?? [demoStage?.input ?? "—", demoStage?.output ?? "—"];
+              const summary = report?.summary ?? "等待运行后生成阶段报告。";
+              const details = report?.details ?? [];
               return (
                 <details
-                  key={stage.id}
+                  key={`${stage.id}-${index}`}
                   className={`rt-trace-row ${rawStatus === "running" ? "is-running" : ""} ${
                     stage.id === workflowStageIdForNav(activeStageId) ? "is-active" : ""
                   }`}
@@ -914,16 +874,16 @@ export default function ReviewTraceWorkbench() {
                     <span className={`rt-status-dot rt-status-dot--${rawStatus}`}>{stageIcon(rawStatus)}</span>
                     <span className="rt-trace-row__main">
                       <strong>{stage.label}</strong>
-                      <span>{demoStage?.method ?? "确定性"} · {summary}</span>
+                      <span>{summary}</span>
                     </span>
                     <span className="rt-trace-row__meta">
                       <small>{stageLabel(rawStatus)}</small>
-                      <small>{demoStage?.duration ?? "—"}</small>
+                      <small>{report?.status ?? "未生成"}</small>
                     </span>
                     <span className="rt-trace-row__meta rt-trace-row__meta--narrow">
-                      <small>{details[0] ?? "—"}</small>
-                      <small>{details[1] ?? "—"}</small>
-                      <small>{demoStage?.tokens ?? "—"} token</small>
+                      <small>{details[0] ?? "等待输出"}</small>
+                      <small>{details[1] ?? "等待输出"}</small>
+                      <small>{report?.details?.length ?? 0} 条明细</small>
                     </span>
                   </summary>
                   <div className="rt-trace-row__body">
@@ -932,15 +892,18 @@ export default function ReviewTraceWorkbench() {
                       <p>{summary}</p>
                     </div>
                     <div className="rt-trace-grid">
-                      <div><strong>输入</strong><span>{details[0] ?? "—"}</span></div>
-                      <div><strong>输出</strong><span>{details[1] ?? "—"}</span></div>
-                      <div><strong>警告</strong><span>{report?.errors?.join("；") || demoStage?.badge}</span></div>
-                      <div><strong>Token</strong><span>{demoStage?.tokens}</span></div>
+                      <div><strong>输入</strong><span>{details[0] ?? "等待运行后生成输入摘要。"}</span></div>
+                      <div><strong>输出</strong><span>{details[1] ?? "等待运行后生成输出摘要。"}</span></div>
+                      <div><strong>警告</strong><span>{report?.errors?.join("；") || "无"}</span></div>
+                      <div><strong>修订</strong><span>{report?.revisions?.join("；") || "无"}</span></div>
                     </div>
                   </div>
                 </details>
               );
             })}
+            {effectiveStageReports.length === 0 ? (
+              <p className="rt-note">当前还没有阶段报告，开始运行后会显示真实结果。</p>
+            ) : null}
           </div>
         </section>
 
@@ -950,18 +913,11 @@ export default function ReviewTraceWorkbench() {
               <p className="rt-kicker">阶段报告</p>
               <h2>每条报告都保留修订、失败与说明</h2>
             </div>
-            <span className="rt-pill">{effectiveStageReports.length || demoStages.length} 条报告</span>
+            <span className="rt-pill">{effectiveStageReports.length} 条报告</span>
           </div>
           <div className="rt-report-grid">
-            {(effectiveStageReports.length ? effectiveStageReports : demoStages.slice(0, 4).map((stage, index) => ({
-              name: stage.id,
-              status: stage.status,
-              summary: stage.summary,
-              details: [stage.input, stage.output],
-              revisions: index === 1 ? ["实时数据被限流；已使用缓存示例兜底。"] : ["确定性步骤。"] ,
-              errors: stage.status === "warning" ? ["需要关注"] : [],
-            }))).map((report) => (
-              <article key={report.name} className="rt-report-card">
+            {effectiveStageReports.map((report, reportIndex) => (
+              <article key={`${report.name}-${reportIndex}`} className="rt-report-card">
                 <div className="rt-report-card__head">
                   <strong>{report.name}</strong>
                   <span className={`rt-badge rt-badge--${report.status === "complete" ? "success" : report.status === "running" ? "running" : "warning"}`}>
@@ -970,14 +926,23 @@ export default function ReviewTraceWorkbench() {
                 </div>
                 <p>{report.summary}</p>
                 <ul>
-                  {report.details?.slice(0, 2).map((item) => <li key={item}>{item}</li>)}
+                  {report.details?.slice(0, 2).map((item, detailIndex) => (
+                    <li key={`${report.name}-detail-${detailIndex}`}>{item}</li>
+                  ))}
                 </ul>
                 <div className="rt-mini-stack">
-                  {report.revisions?.map((item) => <span key={item}>{item}</span>)}
-                  {report.errors?.map((item) => <span key={item} className="rt-warning">{item}</span>)}
+                  {report.revisions?.map((item, revisionIndex) => (
+                    <span key={`${report.name}-revision-${revisionIndex}`}>{item}</span>
+                  ))}
+                  {report.errors?.map((item, errorIndex) => (
+                    <span key={`${report.name}-error-${errorIndex}`} className="rt-warning">{item}</span>
+                  ))}
                 </div>
               </article>
             ))}
+            {effectiveStageReports.length === 0 ? (
+              <p className="rt-note">暂无可展示的报告，运行完成后会按阶段写入。</p>
+            ) : null}
           </div>
         </section>
 
@@ -1030,7 +995,7 @@ export default function ReviewTraceWorkbench() {
       ) ?? filteredRows[0];
     const leadCopy = run
       ? `${run.rawReviews.length} 条原始 → ${run.reviews.length} 条清洗后。可搜索、筛选并在右侧检查器中打开任一行。`
-      : `${rawReviewRows.length} 条示例原始 → ${cleanReviewRows.length} 条示例清洗后。可搜索、筛选并在右侧检查器中打开任一行。`;
+      : `${rawReviewRows.length} 条原始 → ${cleanReviewRows.length} 条清洗后。可搜索、筛选并在右侧检查器中打开任一行。`;
 
     return (
       <div className="rt-page">
@@ -1337,11 +1302,7 @@ export default function ReviewTraceWorkbench() {
               </section>
               <section id="rt-prd-problem">
                 <strong>问题陈述</strong>
-                <textarea
-                  key={run?.runId ?? "demo-prd-problem"}
-                  className="rt-textarea"
-                  defaultValue={run?.analysisScope?.focusSummary ?? "用户在被推到付费前，并不清楚订阅价值和取消路径。"}
-                />
+                <p>{run?.analysisScope?.focusSummary ?? "当前还没有运行结果，问题陈述会在运行后生成。"}</p>
               </section>
               <section id="rt-prd-goals">
                 <strong>目标</strong>
@@ -1419,7 +1380,7 @@ export default function ReviewTraceWorkbench() {
     );
     const testLead = run
       ? `${testCaseCards.length} 个测试用例 · 覆盖 ${coveredRequirementCount} 条需求 · 证据关联测试 ${run.traceabilityValidation.unsupportedTestCaseIds.length ? "需修复" : "100%"}。`
-      : `${testCaseCards.length} 个示例测试用例 · 覆盖 ${coveredRequirementCount} 条需求。`;
+      : `${testCaseCards.length} 个测试用例 · 覆盖 ${coveredRequirementCount} 条需求。`;
 
     return (
       <div className="rt-page">
@@ -1702,7 +1663,7 @@ export default function ReviewTraceWorkbench() {
           <div className="rt-mini-stack">
             <span>提供方：{currentProvider}</span>
             <span>来源：{currentSource}</span>
-            <span>已知限制：{run?.dataLimitations.join("；") || "限流、缓存示例兜底、假设门控。"}</span>
+            <span>已知限制：{run?.dataLimitations.join("；") || "暂无运行结果，限制信息会在后端生成后显示。"}</span>
           </div>
         </InspectorCard>
       );
@@ -1912,11 +1873,10 @@ export default function ReviewTraceWorkbench() {
         <section className="rt-nav__section">
           <span className="rt-nav__heading">阶段</span>
           {stageNav.map((item) => {
-            const demoStage = demoStages.find((stage) => stage.id === item.id);
             const workflowStatus = run?.stages.find(
               (stage) => stage.name === workflowStageIdForNav(item.id),
             )?.status;
-            const navStatus = workflowStatus ?? demoStage?.status ?? "pending";
+            const navStatus = workflowStatus ?? "pending";
 
             return (
               <button
@@ -1926,11 +1886,11 @@ export default function ReviewTraceWorkbench() {
                 }`}
                 type="button"
                 onClick={() => goToStage(item)}
-              >
+                >
                 {stageIcon(navStatus)}
                 <span>
                   <strong>{item.label}</strong>
-                  <small>{workflowStatus ? stageLabel(workflowStatus) : demoStage?.badge ?? "—"}</small>
+                  <small>{workflowStatus ? stageLabel(workflowStatus) : "等待运行"}</small>
                 </span>
               </button>
             );

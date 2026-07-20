@@ -9,7 +9,6 @@ from collections.abc import Callable
 from collections.abc import Iterator
 from collections import Counter
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 from typing import Protocol
 from urllib.parse import urlparse
@@ -94,7 +93,6 @@ class WorkflowRunner:
     ) -> None:
         self.source_adapters = source_adapters or {
             "live": LiveReviewSourceAdapter(),
-            "fixture": FixtureReviewSourceAdapter(),
             "import": ImportedReviewSourceAdapter(),
         }
 
@@ -127,28 +125,6 @@ class LiveReviewSourceAdapter:
             ],
         )
 
-
-class FixtureReviewSourceAdapter:
-    def collect(self, request: WorkflowRunRequest) -> ReviewSourceBatch:
-        return ReviewSourceBatch(
-            run_id="fixture-run-001",
-            source={
-                "mode": request.source_mode,
-                "label": "缓存示例数据集",
-            },
-            scope={
-                "appStoreUrl": request.app_store_url,
-                "analysisGoal": request.analysis_goal,
-                "storefront": "us",
-            },
-            raw_reviews=load_fixture_reviews(),
-            validation_messages=[
-                "所有发现、需求和测试用例都已关联示例评论证据。"
-            ],
-            analysis_override=build_fixture_analysis,
-        )
-
-
 class ImportedReviewSourceAdapter:
     def collect(self, request: WorkflowRunRequest) -> ReviewSourceBatch:
         dataset_format = (request.dataset_format or "").lower()
@@ -170,7 +146,7 @@ class ImportedReviewSourceAdapter:
             },
             raw_reviews=parse_imported_reviews(dataset_format, dataset_text),
             validation_messages=[
-                "导入数据已完成结构化、清洗和基础统计，后续语义分析会在模型阶段替换当前占位结果。"
+                "导入数据已完成结构化、清洗和基础统计，后续语义分析由后端模型能力生成。"
             ],
         )
 
@@ -181,7 +157,7 @@ def run_review_workflow(
 ) -> dict[str, object]:
     source_adapter = source_adapters.get(request.source_mode)
     if not source_adapter:
-        raise HTTPException(status_code=400, detail="sourceMode 必须是 live、fixture 或 import。")
+        raise HTTPException(status_code=400, detail="sourceMode 必须是 live 或 import。")
 
     batch = source_adapter.collect(request)
     workflow = complete_review_workflow(
@@ -206,7 +182,7 @@ def run_review_workflow_events(
 ) -> Iterator[dict[str, object]]:
     source_adapter = source_adapters.get(request.source_mode)
     if not source_adapter:
-        raise HTTPException(status_code=400, detail="sourceMode 必须是 live、fixture 或 import。")
+        raise HTTPException(status_code=400, detail="sourceMode 必须是 live 或 import。")
 
     yield stage_event("reviews", STAGE_STATUS_RUNNING)
     batch = source_adapter.collect(request)
@@ -522,29 +498,6 @@ def workflow_run_payload(
         "traceabilityValidation": workflow["traceabilityValidation"],
         "validationMessages": validation_messages,
     })
-
-
-def build_fixture_analysis(reviews: list[dict[str, object]]) -> dict[str, object]:
-    review_ids = [str(review["id"]) for review in reviews]
-
-    return {
-        "summary": {
-            "provider": "stub",
-            "model": "fixture-model-stub",
-            "modelDriven": False,
-        },
-        "findings": [
-            {
-                "id": "finding-subscription-clarity",
-                "title": "订阅转化前，订阅价值和取消方式说明不够清楚。",
-                "reviewIds": review_ids,
-                "sampleCount": len(review_ids),
-                "confidence": "中等",
-                "method": "示例模型桩",
-                "conflictingEvidence": [],
-            }
-        ],
-    }
 
 
 def parse_us_app_store_url(app_store_url: str) -> tuple[str, str]:
@@ -2013,11 +1966,6 @@ def unsupported_test_cases(
             unsupported_test_case_ids.append(str(test_case["id"]))
 
     return unsupported_test_case_ids
-
-
-def load_fixture_reviews() -> list[dict[str, object]]:
-    fixture_path = Path(__file__).with_name("fixtures") / "sample_reviews.json"
-    return parse_json_reviews(fixture_path.read_text(encoding="utf-8"))
 
 
 def completed_stages() -> list[dict[str, str]]:
