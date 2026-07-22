@@ -1,4 +1,5 @@
 import json
+import re
 
 from fastapi.testclient import TestClient
 
@@ -400,6 +401,7 @@ def test_imported_workflow_returns_traceable_artifacts(monkeypatch):
         {"name": "cleaning", "status": "complete"},
         {"name": "scope", "status": "complete"},
         {"name": "analysis", "status": "complete"},
+        {"name": "evidence", "status": "complete"},
         {"name": "prd", "status": "complete"},
         {"name": "tests", "status": "complete"},
         {"name": "validation", "status": "complete"},
@@ -433,8 +435,8 @@ def test_imported_workflow_returns_traceable_artifacts(monkeypatch):
     assert any(
         detail.startswith("范围样本：") for detail in body["stageReports"][2]["details"]
     )
-    assert body["stageReports"][4]["details"][0].startswith("PRD 目标：")
-    assert body["stageReports"][6]["summary"] == "追溯校验通过"
+    assert body["stageReports"][5]["details"][0].startswith("PRD 目标：")
+    assert body["stageReports"][7]["summary"] == "追溯校验通过"
     assert body["validationMessages"] == [
         "导入数据已完成结构化、清洗和基础统计，后续语义分析由后端模型能力生成。"
     ]
@@ -659,24 +661,13 @@ def test_live_app_store_flow_requires_us_app_store_link():
     assert response.json()["detail"] == "当前仅支持 U.S. App Store 链接。"
 
 
-def test_live_app_store_reviews_use_review_page(monkeypatch):
-    payload = {
-        "feed": {
-            "entry": [
-                {
-                    "author": {"name": {"label": "用户A"}},
-                    "updated": {"label": "2026-07-18T20:45:41-07:00"},
-                    "im:rating": {"label": "5"},
-                    "im:version": {"label": "8.4.27"},
-                    "id": {"label": "review-001"},
-                    "title": {"label": "很好"},
-                    "content": {"label": "内容不错"},
-                }
-            ]
-        }
-    }
+def test_live_app_store_reviews_collects_ten_pages_up_to_five_hundred(monkeypatch):
+    requested_pages: list[int] = []
 
     class FakeResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
         def __enter__(self):
             return self
 
@@ -686,17 +677,40 @@ def test_live_app_store_reviews_use_review_page(monkeypatch):
         def read(self):
             import json
 
-            return json.dumps(payload).encode("utf-8")
+            return json.dumps(self.payload).encode("utf-8")
 
     def fake_urlopen(request, timeout=20):
-        assert "page=2" in request.full_url
-        return FakeResponse()
+        match = re.search(r"page=(\d+)", request.full_url)
+        assert match is not None
+        page = int(match.group(1))
+        requested_pages.append(page)
+        return FakeResponse(
+            {
+                "feed": {
+                    "entry": [
+                        {
+                            "author": {"name": {"label": f"用户{index}"}},
+                            "updated": {"label": "2026-07-18T20:45:41-07:00"},
+                            "im:rating": {"label": "5"},
+                            "im:version": {"label": "8.4.27"},
+                            "id": {"label": f"review-{page:02d}-{index:02d}"},
+                            "title": {"label": "很好"},
+                            "content": {"label": "内容不错"},
+                        }
+                        for index in range(50)
+                    ]
+                }
+            }
+        )
 
     monkeypatch.setattr(workflow.urllib.request, "urlopen", fake_urlopen)
 
     reviews = workflow.fetch_app_store_reviews("839285684", "us")
 
-    assert [review["id"] for review in reviews] == ["review-001"]
+    assert requested_pages == list(range(1, 11))
+    assert len(reviews) == 500
+    assert reviews[0]["id"] == "review-01-00"
+    assert reviews[-1]["id"] == "review-10-49"
 
 
 def test_workflow_rejects_unknown_source_mode():
@@ -831,6 +845,7 @@ def test_imported_json_reviews_run_through_workflow(monkeypatch):
         "cleaning",
         "scope",
         "analysis",
+        "evidence",
         "prd",
         "tests",
         "validation",

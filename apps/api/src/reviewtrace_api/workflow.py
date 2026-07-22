@@ -29,6 +29,7 @@ WORKFLOW_STAGE_NAMES = [
     "cleaning",
     "scope",
     "analysis",
+    "evidence",
     "prd",
     "tests",
     "validation",
@@ -38,10 +39,14 @@ WORKFLOW_PROGRESS_SEQUENCE = [
     "cleaning",
     "scope",
     "analysis",
+    "evidence",
     "prd",
     "tests",
     "validation",
 ]
+
+APP_STORE_REVIEW_MAX_PAGES = 10
+APP_STORE_REVIEW_MAX_COUNT = 500
 
 
 class WorkflowRunRequest(BaseModel):
@@ -270,15 +275,34 @@ def complete_review_workflow_events(
         scope_reviews,
         reviews,
     )
-    findings = enrich_findings_with_evidence(analysis["findings"], reviews)
+    raw_findings = analysis["findings"]
     yield stage_event("analysis", STAGE_STATUS_COMPLETE)
     yield report_event(
         "analysis",
         STAGE_STATUS_COMPLETE,
-        f"{analysis['summary']['provider']} / {analysis['summary']['model']} 生成 {len(findings)} 个发现。",
+        f"{analysis['summary']['provider']} / {analysis['summary']['model']} 生成 {len(raw_findings)} 个候选发现。",
         [
             "模型驱动" if analysis["summary"]["modelDriven"] else "未配置模型，未生成发现",
-            *[f"发现：{finding['title']}" for finding in findings[:3]],
+            *[f"候选发现：{finding['title']}" for finding in raw_findings[:3]],
+        ],
+    )
+
+    yield stage_event("evidence", STAGE_STATUS_RUNNING)
+    findings = enrich_findings_with_evidence(raw_findings, reviews)
+    yield stage_event("evidence", STAGE_STATUS_COMPLETE)
+    yield report_event(
+        "evidence",
+        STAGE_STATUS_COMPLETE,
+        f"完成 {len(findings)} 个发现的评论证据绑定。",
+        [
+            *[
+                f"发现 {finding['id']}：{len(finding['evidence'])} 条有效证据"
+                for finding in findings[:3]
+            ],
+        ],
+        revisions=[
+            "模型输出已按 reviewId 重新校验并剔除无效引用。",
+            "冲突证据已按有效评论重新归集。",
         ],
     )
 
@@ -519,14 +543,38 @@ def parse_us_app_store_url(app_store_url: str) -> tuple[str, str]:
 
 
 def fetch_app_store_reviews(app_id: str, storefront: str) -> list[dict[str, object]]:
+    reviews: list[dict[str, object]] = []
+    seen_review_ids: set[str] = set()
+
+    for page in range(1, APP_STORE_REVIEW_MAX_PAGES + 1):
+        page_reviews = fetch_app_store_review_page(
+            app_id,
+            storefront,
+            page,
+        )
+        for review in page_reviews:
+            review_id = str(review["id"])
+            if review_id in seen_review_ids:
+                continue
+
+            reviews.append(review)
+            seen_review_ids.add(review_id)
+            if len(reviews) >= APP_STORE_REVIEW_MAX_COUNT:
+                return reviews
+
+    return reviews
+
+
+def fetch_app_store_review_page(
+    app_id: str,
+    storefront: str,
+    page: int,
+) -> list[dict[str, object]]:
     url = (
         f"https://itunes.apple.com/{storefront}/rss/customerreviews/"
-        f"page=2/id={app_id}/sortBy=mostRecent/json"
+        f"page={page}/id={app_id}/sortBy=mostRecent/json"
     )
-    request = urllib.request.Request(
-        url,
-        headers={"User-Agent": "ReviewTrace/0.1"},
-    )
+    request = urllib.request.Request(url, headers={"User-Agent": "ReviewTrace/0.1"})
 
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
@@ -534,7 +582,7 @@ def fetch_app_store_reviews(app_id: str, storefront: str) -> list[dict[str, obje
     except (TimeoutError, urllib.error.URLError, json.JSONDecodeError) as error:
         raise HTTPException(
             status_code=502,
-            detail="无法获取 App Store 评论，请稍后重试或使用导入评论。",
+            detail=f"无法获取 App Store 第 {page} 页评论，请稍后重试或使用导入评论。",
         ) from error
 
     return parse_app_store_review_feed(payload, app_id, storefront)
@@ -1731,11 +1779,24 @@ def build_stage_reports(
             "name": "analysis",
             "status": STAGE_STATUS_COMPLETE,
             "summary": (
-                f"{analysis_summary['provider']} / {analysis_summary['model']} 生成 {len(findings)} 个发现。"
+                f"{analysis_summary['provider']} / {analysis_summary['model']} 生成 {len(findings)} 个候选发现。"
             ),
             "details": [
                 "模型驱动" if analysis_summary["modelDriven"] else "未配置模型，未生成发现",
-                *[f"发现：{finding['title']}" for finding in findings[:3]],
+                *[f"候选发现：{finding['title']}" for finding in findings[:3]],
+            ],
+            "revisions": [],
+            "errors": [],
+        },
+        {
+            "name": "evidence",
+            "status": STAGE_STATUS_COMPLETE,
+            "summary": f"完成 {len(findings)} 个发现的评论证据绑定。",
+            "details": [
+                *[
+                    f"发现 {finding['id']}：{len(finding['evidence'])} 条有效证据"
+                    for finding in findings[:3]
+                ],
             ],
             "revisions": [
                 "模型输出已按 reviewId 重新校验并剔除无效引用。",
@@ -1964,13 +2025,8 @@ def unsupported_test_cases(
 
 def completed_stages() -> list[dict[str, str]]:
     return [
-        {"name": "reviews", "status": STAGE_STATUS_COMPLETE},
-        {"name": "cleaning", "status": STAGE_STATUS_COMPLETE},
-        {"name": "scope", "status": STAGE_STATUS_COMPLETE},
-        {"name": "analysis", "status": STAGE_STATUS_COMPLETE},
-        {"name": "prd", "status": STAGE_STATUS_COMPLETE},
-        {"name": "tests", "status": STAGE_STATUS_COMPLETE},
-        {"name": "validation", "status": STAGE_STATUS_COMPLETE},
+        {"name": name, "status": STAGE_STATUS_COMPLETE}
+        for name in WORKFLOW_STAGE_NAMES
     ]
 
 

@@ -95,9 +95,9 @@ const views: Array<{
 ];
 
 const stageNav = [
-  { id: "scope", label: "1 范围", view: "run" as DemoView },
-  { id: "collect", label: "2 收集", view: "run" as DemoView },
-  { id: "clean", label: "3 清洗", view: "run" as DemoView },
+  { id: "collect", label: "1 收集", view: "run" as DemoView },
+  { id: "clean", label: "2 清洗", view: "run" as DemoView },
+  { id: "scope", label: "3 范围", view: "run" as DemoView },
   { id: "analyze", label: "4 分析", view: "run" as DemoView },
   { id: "evidence", label: "5 证据", view: "findings" as DemoView },
   { id: "prd", label: "6 PRD", view: "prd" as DemoView },
@@ -127,6 +127,7 @@ const workflowStageOrder = [
   "cleaning",
   "scope",
   "analysis",
+  "evidence",
   "prd",
   "tests",
   "validation",
@@ -265,6 +266,7 @@ export default function ReviewTraceWorkbench() {
   const effectiveStageReports = stageReports.length
     ? stageReports
     : run?.stageReports ?? [];
+  const navigationStages = run?.stages.length ? run.stages : progressStages;
   const importPreview = useMemo(
     () => previewImportedDataset(importText, importFileName),
     [importFileName, importText],
@@ -396,7 +398,7 @@ export default function ReviewTraceWorkbench() {
 
     setRequestedStart(true);
     setActiveView("run");
-    setActiveStageId("scope");
+    setActiveStageId("collect");
     openInspector(defaultInspectorMap.run, { revealOnMobile: false });
     setInspectorHint("实时");
     setMobileNavOpen(false);
@@ -610,7 +612,7 @@ export default function ReviewTraceWorkbench() {
                 <p className="rt-kicker">A. App Store 链接</p>
                 <h2>粘贴可用的 App Store 商店链接</h2>
               </div>
-              <span className="rt-pill">实时采集入口</span>
+              <span className="rt-pill">最多 500 条公开评论</span>
             </div>
             <div className="rt-field rt-field--link">
               <span className="rt-field__icon">
@@ -645,7 +647,7 @@ export default function ReviewTraceWorkbench() {
                 </div>
               </div>
             </button>
-            <p className="rt-note">App Store 元数据由后端运行结果决定，前端不再伪造。</p>
+            <p className="rt-note">后端会读取最多 10 页、500 条公开评论；App Store 元数据与实际条数均以后端运行结果为准。</p>
           </section>
 
           <section className={`rt-card rt-card--surface ${sourceMode === "import" ? "" : "rt-card--dimmed"}`}>
@@ -1873,7 +1875,7 @@ export default function ReviewTraceWorkbench() {
         <section className="rt-nav__section">
           <span className="rt-nav__heading">阶段</span>
           {stageNav.map((item) => {
-            const workflowStatus = run?.stages.find(
+            const workflowStatus = navigationStages.find(
               (stage) => stage.name === workflowStageIdForNav(item.id),
             )?.status;
             const navStatus = workflowStatus ?? "pending";
@@ -2025,6 +2027,7 @@ function workflowStageLabel(name: string) {
   const labels: Record<string, string> = {
     analysis: "分类结果",
     cleaning: "清洗",
+    evidence: "证据评估",
     prd: "产品需求文档",
     reviews: "评论",
     scope: "范围",

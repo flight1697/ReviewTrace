@@ -72,10 +72,10 @@ live 模式仅支持 U.S. App Store 链接，例如：
 https://apps.apple.com/us/app/workout-for-women-home-gym/id839285684
 ```
 
-后端会从 Apple 公开评论 RSS 源读取最新评论：
+后端会从 Apple 公开评论 RSS 源按页读取最新评论，最多采集 10 页、500 条：
 
 ```text
-https://itunes.apple.com/us/rss/customerreviews/page=2/id=<app_id>/sortBy=mostRecent/json
+https://itunes.apple.com/us/rss/customerreviews/page=<1..10>/id=<app_id>/sortBy=mostRecent/json
 ```
 
 已知限制：
@@ -89,8 +89,8 @@ https://itunes.apple.com/us/rss/customerreviews/page=2/id=<app_id>/sortBy=mostRe
 
 采集策略：
 
-- 每次用户点击 **生成分析报告** 只发起一次 Apple RSS 请求。
-- 当前版本不做自动重试，避免在 Apple 返回错误或网络不稳定时形成重试风暴。
+- 每次用户点击 **生成分析报告** 最多请求 Apple RSS 的 10 个公开评论页，并按评论 ID 去重，最多保留 500 条。
+- 当前版本不会重复请求同一页，避免在 Apple 返回错误或网络不稳定时形成重试风暴。
 - 如果需要重复分析同一 app，建议优先使用导出的 JSON/CSV 数据走导入模式。
 
 ## 评论导入格式

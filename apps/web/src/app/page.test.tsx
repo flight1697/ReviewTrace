@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import Home from "./page";
@@ -30,6 +30,7 @@ const workflowRunResponse = {
     { name: "cleaning", status: "complete" },
     { name: "scope", status: "complete" },
     { name: "analysis", status: "complete" },
+    { name: "evidence", status: "complete" },
     { name: "prd", status: "complete" },
     { name: "tests", status: "complete" },
     { name: "validation", status: "complete" },
@@ -414,6 +415,99 @@ describe("ReviewTrace 工作台", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "追溯矩阵追溯矩阵与关系图" }));
     expect(screen.getByRole("button", { name: /发现与评论链路已完成追溯/ })).toBeInTheDocument();
+  });
+
+  it("流式事件到达时按实际阶段更新左侧导航", async () => {
+    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const encoder = new TextEncoder();
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+
+      if (url.endsWith("/config/model")) {
+        return {
+          ok: true,
+          json: async () => modelStatusResponse,
+        } as Response;
+      }
+
+      if (url.endsWith("/workflow/runs/stream")) {
+        return {
+          ok: true,
+          body: new ReadableStream<Uint8Array>({
+            start(controller) {
+              streamController = controller;
+            },
+          }),
+        } as Response;
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    render(<Home />);
+    fireEvent.click(screen.getByRole("button", { name: /开始分析/ }));
+
+    await waitFor(() => expect(streamController).toBeDefined());
+
+    await act(async () => {
+      streamController?.enqueue(
+        encoder.encode(
+          `${JSON.stringify({
+            type: "stage",
+            stage: { name: "reviews", status: "running" },
+            stages: [
+              { name: "reviews", status: "running" },
+              { name: "cleaning", status: "pending" },
+              { name: "scope", status: "pending" },
+              { name: "analysis", status: "pending" },
+              { name: "evidence", status: "pending" },
+              { name: "prd", status: "pending" },
+              { name: "tests", status: "pending" },
+              { name: "validation", status: "pending" },
+            ],
+          })}\n`,
+        ),
+      );
+    });
+
+    expect(
+      screen.getByRole("button", { name: /1 收集.*运行中/ }),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      streamController?.enqueue(
+        encoder.encode(
+          `${JSON.stringify({
+            type: "stage",
+            stage: { name: "cleaning", status: "running" },
+            stages: [
+              { name: "reviews", status: "complete" },
+              { name: "cleaning", status: "running" },
+              { name: "scope", status: "pending" },
+              { name: "analysis", status: "pending" },
+              { name: "evidence", status: "pending" },
+              { name: "prd", status: "pending" },
+              { name: "tests", status: "pending" },
+              { name: "validation", status: "pending" },
+            ],
+          })}\n`,
+        ),
+      );
+    });
+
+    expect(
+      screen.getByRole("button", { name: /2 清洗.*运行中/ }),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      streamController?.enqueue(
+        encoder.encode(
+          `${JSON.stringify({ type: "run", run: workflowRunResponse })}\n`,
+        ),
+      );
+      streamController?.close();
+    });
   });
 
   it("通过单一 WorkflowRun 契约入口解析后端运行结果", () => {

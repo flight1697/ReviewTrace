@@ -166,7 +166,7 @@ export function workflowStageIdForNav(navId: string) {
     analyze: "analysis",
     clean: "cleaning",
     collect: "reviews",
-    evidence: "analysis",
+    evidence: "evidence",
     prd: "prd",
     scope: "scope",
     tests: "tests",
